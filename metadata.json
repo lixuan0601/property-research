@@ -1,0 +1,5 @@
+{
+  "name": "PropSearch Intel",
+  "description": "Real-time real estate market intelligence using Google Search Grounding to analyze property listings, market interest, and neighborhood trends.",
+  "requestFramePermissions": []
+}
