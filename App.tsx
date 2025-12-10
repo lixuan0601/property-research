@@ -15,7 +15,6 @@ export default function App() {
   
   const TABS = [
     'Property Overview',
-    'Comparable Properties',
     'Price History & Trends',
     'Suburb Profile',
     'School Catchment & Ratings',
@@ -318,10 +317,6 @@ export default function App() {
         icon = 'house';
         title = 'Property Overview';
         propertyAttributes = parsePropertyAttributes(content);
-      } else if (titleLine.includes('Comparable')) {
-        icon = 'scale';
-        title = 'Comparable Properties';
-        comparables = parseComparables(content);
       } else if (titleLine.includes('Price History')) {
         icon = 'chart';
         title = 'Price History & Trends';
@@ -337,6 +332,8 @@ export default function App() {
         icon = 'people';
         title = 'Investment Insights';
         investmentMetrics = parseInvestmentMetrics(content);
+        // Also try parsing comparables from this section as they are now merged in the prompt
+        comparables = parseComparables(content);
       }
 
       if (titleLine.length > 0 && title !== text.trim()) {
@@ -355,7 +352,6 @@ export default function App() {
   const getTabIcon = (tab: string) => {
     switch(tab) {
       case 'Property Overview': return LayoutDashboard;
-      case 'Comparable Properties': return Scale;
       case 'Price History & Trends': return TrendingUp;
       case 'Suburb Profile': return Map;
       case 'School Catchment & Ratings': return GraduationCap;

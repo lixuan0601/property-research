@@ -17,7 +17,7 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       
       Your goal is to answer the user's question: "Who are the people interested in this address?".
       
-      Structure your response into exactly these 6 sections, separated by distinct headers:
+      Structure your response into exactly these 5 sections, separated by distinct headers:
       
       ## 🏠 Property Overview
       Find the details and list them in this **EXACT format**:
@@ -34,12 +34,6 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       - Solar Power: [Details, e.g., 6.6kW system or None]
       - Listing Status: [Active/Sold/Pending]
       - Key Features: [Comma-separated list of amenities, e.g., Solar Panels, Pool, Garage]
-      
-      ## ⚖️ Comparable Properties
-      Find at least 10 properties in the same suburb that have **SOLD** recently (last 6-12 months).
-      **CRITICAL:** You must find the actual SOLD PRICE. 
-      List them in this EXACT format (one per line):
-      - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Beds/Baths/Car/Land]
       
       ## 📈 Price History
       Search specifically on **property.com.au** and other major real estate archives to retrieve the **complete available sales and rental history**. Do not limit to recent years; get all recorded history found.
@@ -65,6 +59,12 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       **MANDATORY DATA:** You must provide a comparison for 'Estimated Value' and 'Rental Yield' against the suburb average in this EXACT format (one per line):
       - Metric: Estimated Value, Property: [Range/Value], Suburb_Average: [Value], Comparison: [Above Average/Below Average/Average]
       - Metric: Rental Yield, Property: [Percentage], Suburb_Average: [Percentage], Comparison: [Above Average/Below Average/Average]
+
+      **Comparable Properties**
+      Find at least 10 properties in the same suburb that have **SOLD** recently (last 6-12 months).
+      **CRITICAL:** You must find the actual SOLD PRICE. 
+      List them in this EXACT format (one per line):
+      - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Beds/Baths/Car/Land]
 
       Then provide the qualitative analysis:
       - **Market Assessment:** Fairly priced?

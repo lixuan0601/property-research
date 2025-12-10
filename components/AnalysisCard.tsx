@@ -168,49 +168,6 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
                {formatContent(section.content.split('\n').filter(line => line.includes('Status') || line.includes('Listed')).join('\n'))}
             </div>
           </div>
-        ) : section.comparables && section.comparables.length > 0 ? (
-          /* Comparable Properties View */
-          <div className="space-y-4">
-            <p className="text-sm text-slate-500 italic mb-2">Recently sold properties similar to the subject property.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {section.comparables.map((comp, i) => (
-                <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white hover:shadow-md transition-all group">
-                   <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-start gap-2">
-                        <div className="mt-1 p-1.5 bg-blue-50 rounded-full text-blue-500">
-                          <Home size={14} />
-                        </div>
-                        <h4 className="font-semibold text-slate-800 text-sm leading-tight max-w-[200px]">{comp.address}</h4>
-                      </div>
-                      <div className="flex flex-col items-end">
-                         <span className="text-lg font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{comp.soldPrice}</span>
-                         <span className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">Sold Price</span>
-                      </div>
-                   </div>
-                   
-                   <div className="flex items-center gap-2 text-xs text-slate-500 mb-3 pl-9">
-                      <Calendar size={12} />
-                      <span>Sold: {comp.soldDate}</span>
-                   </div>
-
-                   <div className="pt-3 border-t border-slate-100 pl-1">
-                      <p className="text-xs text-slate-600 line-clamp-2">
-                        <span className="font-medium text-slate-400 mr-1">Features:</span>
-                        {comp.features}
-                      </p>
-                   </div>
-                </div>
-              ))}
-            </div>
-            {/* Render any additional text content below */}
-            {section.content && section.content.trim().length > 0 && (
-               <div className="mt-6 pt-6 border-t border-slate-100">
-                 <div className="prose prose-slate prose-sm max-w-none">
-                    {formatContent(section.content)}
-                 </div>
-               </div>
-            )}
-          </div>
         ) : section.priceHistory && section.priceHistory.length > 0 ? (
           /* Price History View */
           <div className="flex-1 flex flex-col">
@@ -251,8 +208,8 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
             ))}
           </div>
         ) : section.investmentMetrics && section.investmentMetrics.length > 0 ? (
-          /* Investment Metrics View */
-          <div className="space-y-6">
+          /* Investment Insights View */
+          <div className="space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {section.investmentMetrics.map((metric, i) => (
                 <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col relative overflow-hidden">
@@ -280,13 +237,53 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
                 </div>
               ))}
             </div>
+
+            {/* Comparable Properties rendered within Investment Insights */}
+            {section.comparables && section.comparables.length > 0 && (
+              <div className="pt-4 border-t border-slate-100">
+                <h4 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Scale size={16} /> Comparable Properties
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.comparables.map((comp, i) => (
+                    <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white hover:shadow-md transition-all group">
+                      <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-start gap-2">
+                            <div className="mt-1 p-1.5 bg-blue-50 rounded-full text-blue-500">
+                              <Home size={14} />
+                            </div>
+                            <h4 className="font-semibold text-slate-800 text-sm leading-tight max-w-[200px]">{comp.address}</h4>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-lg font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{comp.soldPrice}</span>
+                            <span className="text-[10px] text-slate-400 uppercase font-medium mt-0.5">Sold Price</span>
+                          </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mb-3 pl-9">
+                          <Calendar size={12} />
+                          <span>Sold: {comp.soldDate}</span>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 pl-1">
+                          <p className="text-xs text-slate-600 line-clamp-2">
+                            <span className="font-medium text-slate-400 mr-1">Features:</span>
+                            {comp.features}
+                          </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Render remaining content */}
-            <div className="prose prose-slate prose-sm max-w-none">
+            <div className="prose prose-slate prose-sm max-w-none pt-4 border-t border-slate-100">
               {formatContent(section.content)}
             </div>
           </div>
         ) : (
-          /* Standard markdown rendering */
+          /* Standard markdown rendering fallback */
           <div className="prose prose-slate prose-sm max-w-none flex-1">
             {formatContent(section.content)}
           </div>
