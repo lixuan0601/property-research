@@ -63,9 +63,16 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       
       ## 🏘️ Suburb Profile
       Who lives here? Analyze the neighborhood vibe and demographics.
-      - **Demographics:** Typical residents (families, professionals, retirees).
-      - **Lifestyle:** What is the vibe? (Quiet, buzzing, coastal, leafy).
-      - **Key Drivers:** What draws people here? (Commute, lifestyle, affordability).
+      **FORMAT INSTRUCTIONS:** Use "### " (three hashes) for subsection titles. Write detailed paragraphs for each.
+      
+      ### Demographics & Community
+      [Detailed paragraph about the typical residents, family composition, and age groups.]
+      
+      ### Lifestyle & Atmosphere
+      [Detailed paragraph about the local vibe, noise levels, pace of life, and culture.]
+      
+      ### Connectivity & Convenience
+      [Detailed paragraph about transport, commute options, and access to major amenities.]
       
       ## 🎓 School Catchment
       Find nearby Public and Private schools (Primary and Secondary).

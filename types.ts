@@ -54,6 +54,11 @@ export interface Comparable {
   features: string;
 }
 
+export interface SuburbSubsection {
+  title: string;
+  content: string;
+}
+
 export interface SectionData {
   title: string;
   content: string;
@@ -63,6 +68,7 @@ export interface SectionData {
   schools?: School[];
   investmentMetrics?: InvestmentMetric[];
   comparables?: Comparable[];
+  suburbProfile?: SuburbSubsection[];
 }
 
 export interface AnalysisState {

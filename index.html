@@ -6,6 +6,7 @@
     <title>PropSearch Intel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
       body {
         font-family: 'Inter', sans-serif;
@@ -21,6 +22,19 @@
       .custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: #cbd5e1;
         border-radius: 20px;
+      }
+      
+      /* Print styles for high fidelity PDF generation */
+      @media print {
+        body {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          background-color: white;
+        }
+        @page {
+          margin: 1.5cm;
+          size: auto; 
+        }
       }
     </style>
   <script type="importmap">
