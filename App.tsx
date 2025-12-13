@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, MapPin, Loader2, Building2, Share2, Check, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, Scale } from 'lucide-react';
 import { analyzeProperty } from './services/geminiService';
 import { AnalysisState, SectionData, PricePoint, PropertyAttributes, School, InvestmentMetric, Comparable } from './types';
@@ -13,14 +13,67 @@ export default function App() {
   });
   const [copied, setCopied] = useState(false);
   
+  // Refs for Google Places Autocomplete
+  const inputRef = useRef<HTMLInputElement>(null);
+  const autoCompleteRef = useRef<any>(null);
+
   const TABS = [
     'Property Overview',
+    'Investment Insights',
     'Price History & Trends',
     'Suburb Profile',
-    'School Catchment & Ratings',
-    'Investment Insights'
+    'School Catchment & Ratings'
   ];
   const [activeTab, setActiveTab] = useState(TABS[0]);
+
+  // Initialize Google Places Autocomplete
+  useEffect(() => {
+    const loadGoogleMapsScript = () => {
+      // If script is already loaded or Google Maps is available
+      if ((window as any).google?.maps?.places) {
+        initAutocomplete();
+        return;
+      }
+
+      if (document.getElementById('google-maps-script')) {
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.id = 'google-maps-script';
+      // Using the specific API key provided for Google Maps Places API
+      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyB0dDMOVbcQkBfYpFu5HJY6N0HdMUFBPsk&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => initAutocomplete();
+      document.body.appendChild(script);
+    };
+
+    const initAutocomplete = () => {
+      if (!inputRef.current || !(window as any).google) return;
+      
+      // Prevent double initialization
+      if (autoCompleteRef.current) return;
+
+      try {
+        autoCompleteRef.current = new (window as any).google.maps.places.Autocomplete(inputRef.current, {
+          types: ['address'],
+          fields: ['formatted_address'],
+        });
+
+        autoCompleteRef.current.addListener('place_changed', () => {
+          const place = autoCompleteRef.current.getPlace();
+          if (place.formatted_address) {
+            setAddress(place.formatted_address);
+          }
+        });
+      } catch (error) {
+        console.error("Error initializing Google Places Autocomplete:", error);
+      }
+    };
+
+    loadGoogleMapsScript();
+  }, []);
 
   const handleSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -385,17 +438,18 @@ export default function App() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Market Intelligence</span>
           </h1>
           <p className="text-lg text-slate-600 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Get instant suburb demographics, school ratings, and listing history using live Google Search data.
+            Utilising AI to analyse property value, gauge market interest, and track listing history using live Google Search data.
           </p>
           
-          <form onSubmit={handleSearch} className="relative max-w-xl mx-auto group">
+          <form onSubmit={handleSearch} className="relative max-w-xl mx-auto group z-20">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
               <MapPin className="h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
             </div>
             <input
+              ref={inputRef}
               type="text"
               className="block w-full pl-12 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm hover:shadow-md transition-all text-lg"
-              placeholder="Enter full property address..."
+              placeholder="Enter full property address (e.g. 123 Example St, Sydney)..."
               value={address}
               onChange={(e) => setAddress(e.target.value)}
             />
@@ -411,15 +465,6 @@ export default function App() {
               )}
             </button>
           </form>
-          
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-xs font-medium text-slate-500">
-            <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full">
-              <Loader2 size={14} /> 90-Day History
-            </span>
-            <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full">
-              <MapPin size={14} /> Suburb Profile
-            </span>
-          </div>
         </div>
       </div>
 
@@ -497,7 +542,7 @@ export default function App() {
             <div className="bg-white rounded-b-xl rounded-tr-xl border border-t-0 border-slate-200 shadow-sm min-h-[400px]">
               {activeSectionData ? (
                 <div className="h-full">
-                  <AnalysisCard section={activeSectionData} />
+                  <AnalysisCard section={activeSectionData} searchAddress={address} />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-[400px] text-slate-400 bg-slate-50/30">

@@ -1,14 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Home, TrendingUp, MapPin, Lightbulb, Info, Users, GraduationCap,
   BedDouble, Bath, Sofa, Maximize, Sun, Waves, Zap, Battery, 
-  CheckCircle2, TreeDeciduous, Car, Award, Mountain, ArrowUpToLine, Ruler, PieChart, Scale, Calendar
+  CheckCircle2, TreeDeciduous, Car, Award, Mountain, ArrowUpToLine, Ruler, PieChart, Scale, Calendar, Map as MapIcon
 } from 'lucide-react';
 import { SectionData } from '../types';
 import { PriceChart } from './PriceChart';
 
 interface AnalysisCardProps {
   section: SectionData;
+  searchAddress?: string;
 }
 
 const iconMap = {
@@ -34,8 +35,16 @@ const getFeatureIcon = (feature: string) => {
   return CheckCircle2; // Default
 };
 
-export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
+export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section, searchAddress }) => {
   const Icon = iconMap[section.icon] || Info;
+  const [mapAddress, setMapAddress] = useState<string | undefined>(searchAddress);
+
+  // Update map address when search address changes or section changes
+  useEffect(() => {
+    if (searchAddress) {
+      setMapAddress(searchAddress);
+    }
+  }, [searchAddress]);
 
   // Simple parser to make lists look better in the text content
   const formatContent = (text: string) => {
@@ -246,7 +255,12 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {section.comparables.map((comp, i) => (
-                    <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white hover:shadow-md transition-all group">
+                    <div 
+                      key={i} 
+                      onClick={() => setMapAddress(comp.address)}
+                      className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all group cursor-pointer active:scale-[0.98]"
+                      title="Click to view on map"
+                    >
                       <div className="flex justify-between items-start mb-2">
                           <div className="flex items-start gap-2">
                             <div className="mt-1 p-1.5 bg-blue-50 rounded-full text-blue-500">
@@ -271,10 +285,40 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({ section }) => {
                             {comp.features}
                           </p>
                       </div>
+                      <div className="mt-2 text-xs text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity text-center bg-blue-50 py-1 rounded">
+                        Click to view map location
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
+            )}
+            
+            {/* Map Subsection */}
+            {section.comparables && section.comparables.length > 0 && mapAddress && (
+               <div className="pt-6 border-t border-slate-100 animate-fade-in">
+                  <h4 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <MapIcon size={16} /> Location Analysis
+                  </h4>
+                  <div className="w-full h-[350px] bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-inner relative">
+                    <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 text-xs font-medium text-slate-700 max-w-[80%] truncate">
+                      Viewing: <span className="text-blue-600">{mapAddress}</span>
+                    </div>
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      frameBorder="0"
+                      scrolling="no"
+                      marginHeight={0}
+                      marginWidth={0}
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(mapAddress)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+                      className="w-full h-full"
+                    ></iframe>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2 text-center">
+                    Select a property from the list above to view its specific location.
+                  </p>
+               </div>
             )}
 
             {/* Render remaining content */}
