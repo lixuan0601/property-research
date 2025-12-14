@@ -10,6 +10,14 @@ export interface GroundingChunk {
   };
 }
 
+export interface SectionProgress {
+  key: string;
+  label: string;
+  status: 'pending' | 'completed' | 'error';
+  startTime: number;
+  endTime?: number;
+}
+
 export interface PricePoint {
   date: string;
   price: number | null;

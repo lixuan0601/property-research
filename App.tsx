@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, MapPin, Loader2, Building2, Download, Check, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, Scale } from 'lucide-react';
 import { analyzeProperty } from './services/geminiService';
-import { AnalysisState, SectionData, PricePoint, PropertyAttributes, School, InvestmentMetric, Comparable, SuburbSubsection } from './types';
+import { AnalysisState, SectionData, PricePoint, PropertyAttributes, School, InvestmentMetric, Comparable, SuburbSubsection, SectionProgress } from './types';
 import { AnalysisCard } from './components/AnalysisCard';
+import { AnalysisProgress } from './components/AnalysisProgress';
 
 export default function App() {
   const [address, setAddress] = useState('');
@@ -10,6 +11,7 @@ export default function App() {
     status: 'idle',
     data: null
   });
+  const [progress, setProgress] = useState<Record<string, SectionProgress>>({});
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   
@@ -81,11 +83,17 @@ export default function App() {
     if (!address.trim()) return;
 
     setState({ status: 'loading', data: null });
+    setProgress({}); // Reset progress state
     // Reset tab to first one on new search
     setActiveTab(TABS[0]);
 
     try {
-      const result = await analyzeProperty(address);
+      const result = await analyzeProperty(address, (update) => {
+        setProgress(prev => ({
+          ...prev,
+          [update.key]: update
+        }));
+      });
       setState({ status: 'success', data: result });
     } catch (err: any) {
       setState({ 
@@ -473,6 +481,11 @@ export default function App() {
               )}
             </button>
           </form>
+
+          {/* Analysis Progress Bar */}
+          {(state.status === 'loading' || (state.status === 'success' && Object.keys(progress).length > 0)) && (
+            <AnalysisProgress progress={progress} />
+          )}
         </div>
       </div>
 
