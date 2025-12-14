@@ -45,7 +45,7 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       - Metric: Market Interest, Property: [High/Medium/Low or View Count], Suburb_Average: [Value], Comparison: [Above Average/Below Average/Average]
 
       **Comparable Properties**
-      Find at least 10 properties in the same suburb that have **SOLD** recently (last 6-12 months).
+      Find 5 properties in the same suburb that have **SOLD** recently (last 6-12 months).
       **CRITICAL:** You must find the actual SOLD PRICE. 
       List them in this EXACT format (one per line):
       - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Beds/Baths/Car/Land]
@@ -76,16 +76,19 @@ export const analyzeProperty = async (address: string): Promise<SearchResult> =>
       
       ## 🎓 School Catchment
       Find nearby Public and Private schools (Primary and Secondary).
+      **CRITICAL:** You MUST use the Google Search tool to find the specific **Better Education** rating (usually a score out of 100 or state overall score) for each school strictly from **bettereducation.com.au**. 
+      Do NOT use ratings from Google Maps, MySchool, or other sources. If a Better Education score is unavailable, write "N/A".
+
       **IMPORTANT:** List them in this EXACT format (one per line):
-      - Name: [School Name], Type: [Public/Private], Rating: [Score/10 or Rating], Distance: [Distance]
+      - Name: [School Name], Type: [Public/Private], Rating: [Better Ed Score/100], Distance: [Distance]
     `;
 
     const response = await ai.models.generateContent({
       model: modelId,
       contents: prompt,
       config: {
-        tools: [{ googleSearch: {} }, { googleMaps: {} }],
-        // Note: responseMimeType and responseSchema are NOT allowed with googleSearch
+        tools: [{ googleSearch: {} }],
+        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for speed
       },
     });
 

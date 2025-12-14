@@ -2,7 +2,6 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, MapPin, Loader2, Building2, Download, Check, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, Scale } from 'lucide-react';
 import { analyzeProperty } from './services/geminiService';
 import { AnalysisState, SectionData, PricePoint, PropertyAttributes, School, InvestmentMetric, Comparable, SuburbSubsection } from './types';
-import { GroundingSources } from './components/GroundingSources';
 import { AnalysisCard } from './components/AnalysisCard';
 
 export default function App() {
@@ -60,6 +59,7 @@ export default function App() {
         autoCompleteRef.current = new (window as any).google.maps.places.Autocomplete(inputRef.current, {
           types: ['address'],
           fields: ['formatted_address'],
+          componentRestrictions: { country: 'au' }, // Restrict to Australia
         });
 
         autoCompleteRef.current.addListener('place_changed', () => {
@@ -110,8 +110,12 @@ export default function App() {
         return;
       }
 
+      // Configuration designed to prevent content cutoff:
+      // 1. Set PDF margins to 0. We handle margins via CSS padding in the container.
+      // 2. The container is explicitly 210mm wide (A4 width).
+      // 3. This ensures 1:1 mapping between the HTML element and the PDF page.
       const opt = {
-        margin: [10, 10, 10, 10], // top, left, bottom, right in mm
+        margin: 0, 
         filename: `PropSearch_Intel_${address.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { 
@@ -119,8 +123,7 @@ export default function App() {
           useCORS: true, 
           logging: false,
           scrollY: 0,
-          windowWidth: document.documentElement.offsetWidth,
-          windowHeight: document.documentElement.offsetHeight
+          // Removing windowWidth/windowHeight forces html2canvas to use the element's natural scrollWidth/Height
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
@@ -562,8 +565,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-              <GroundingSources chunks={state.data.groundingChunks} />
             </div>
 
             {/* Visible Overlay for PDF Generation (ensures html2canvas captures visible content) */}
@@ -575,8 +576,9 @@ export default function App() {
                    <span className="font-medium">Generating PDF Report...</span>
                 </div>
                 
-                {/* The Printable Content - Centered, A4 width, Visible */}
-                <div ref={printRef} className="bg-white w-[210mm] min-h-screen p-8 shadow-2xl mb-8 text-slate-900">
+                {/* The Printable Content - Centered, A4 width (210mm), with internal padding (15mm) acting as margins */}
+                {/* This layout matches exactly 1:1 with the A4 PDF page when margins are 0 */}
+                <div ref={printRef} className="bg-white w-[210mm] min-h-screen p-[15mm] shadow-2xl mb-8 text-slate-900 mx-auto">
                     {/* Header */}
                     <div className="text-center mb-8 border-b border-slate-300 pb-4">
                       <div className="flex items-center justify-center gap-2 mb-2">
@@ -594,11 +596,6 @@ export default function App() {
                           <AnalysisCard section={section} searchAddress={address} hideMap={true} />
                         </div>
                       ))}
-                      
-                      <div className="pt-6 border-t border-slate-300 break-inside-avoid">
-                         <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Data Sources</p>
-                         <GroundingSources chunks={state.data.groundingChunks} />
-                      </div>
                     </div>
                 </div>
               </div>
