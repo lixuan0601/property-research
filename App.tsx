@@ -1,9 +1,9 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, MapPin, Loader2, Building2, Download, Check, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, Scale } from 'lucide-react';
 import { analyzeProperty } from './services/geminiService';
-import { AnalysisState, SectionData, PricePoint, PropertyAttributes, School, InvestmentMetric, Comparable, SuburbSubsection, SectionProgress } from './types';
-import { AnalysisCard } from './components/AnalysisCard';
+import { parseAnalysisSections } from './services/dataParser';
+import { AnalysisState, SectionData, SectionProgress } from './types';
+import { IntelligenceCard } from './components/IntelligenceCard';
 import { AnalysisProgress } from './components/AnalysisProgress';
 
 export default function App() {
@@ -140,209 +140,7 @@ export default function App() {
     }, 1500);
   };
 
-  const parsePriceHistory = (content: string): PricePoint[] => {
-    const points: PricePoint[] = [];
-    const lines = content.split('\n');
-    const dateRegex = /Date(?:\*\*|:)?\s*[:\-]?\s*([\d-]{8,10})/i;
-    const priceRegex = /Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:,\s*(?:Type|Event)|$)/i;
-    const typeRegex = /Type(?:\*\*|:)?\s*[:\-]?\s*([a-zA-Z]+)/i;
-    const eventRegex = /Event(?:\*\*|:)?\s*[:\-]?\s*([^,\n]+)/i;
-
-    lines.forEach(line => {
-      const dateMatch = line.match(dateRegex);
-      const priceMatch = line.match(priceRegex);
-      if (dateMatch) {
-        const dateStr = dateMatch[1];
-        let price: number | null = null;
-        let priceStr = 'N/A';
-        if (priceMatch) {
-          priceStr = priceMatch[1].trim();
-          let cleanVal = priceStr.replace(/[$,]/g, '').toLowerCase().trim();
-          let multiplier = 1;
-          if (cleanVal.endsWith('k')) { multiplier = 1000; cleanVal = cleanVal.replace('k', ''); }
-          else if (cleanVal.endsWith('m')) { multiplier = 1000000; cleanVal = cleanVal.replace('m', ''); }
-          const parsed = parseFloat(cleanVal);
-          if (!isNaN(parsed)) { price = parsed * multiplier; }
-        }
-        const typeMatch = line.match(typeRegex);
-        const eventMatch = line.match(eventRegex);
-        let type: 'sale' | 'rent' = 'sale';
-        const typeStr = typeMatch ? typeMatch[1].toLowerCase() : '';
-        const eventStr = eventMatch ? eventMatch[1].toLowerCase() : '';
-        if (typeStr.includes('rent') || eventStr.includes('rent') || eventStr.includes('lease')) { type = 'rent'; }
-        points.push({
-          date: dateStr,
-          price: price,
-          formattedPrice: priceStr,
-          event: eventMatch ? eventMatch[1].trim() : undefined,
-          type: type
-        });
-      }
-    });
-    return points;
-  };
-
-  const parseSchools = (content: string): School[] => {
-    const schools: School[] = [];
-    const lines = content.split('\n');
-    const regex = /Name(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Type(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Rating(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:[,;]\s*Distance(?:\*\*|:)?\s*[:\-]?\s*(.+))?$/i;
-    lines.forEach(line => {
-      const match = line.match(regex);
-      if (match) {
-        schools.push({
-          name: match[1].trim(),
-          type: match[2].trim(),
-          rating: match[3].trim(),
-          distance: match[4] ? match[4].trim() : undefined
-        });
-      }
-    });
-    return schools;
-  };
-
-  const parseComparables = (content: string): Comparable[] => {
-    const comparables: Comparable[] = [];
-    const lines = content.split('\n');
-    const regex = /Address(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Date(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Features(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:[,;]\s*Lat(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?(?:[,;]\s*Lng(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?$/i;
-    lines.forEach(line => {
-      const match = line.match(regex);
-      if (match) {
-        comparables.push({
-          address: match[1].trim(),
-          soldPrice: match[2].trim(),
-          soldDate: match[3].trim(),
-          features: match[4].trim(),
-          lat: match[5] ? parseFloat(match[5]) : undefined,
-          lng: match[6] ? parseFloat(match[6]) : undefined
-        });
-      }
-    });
-    return comparables;
-  };
-
-  const parseInvestmentMetrics = (content: string): InvestmentMetric[] => {
-    const metrics: InvestmentMetric[] = [];
-    const regex = /Metric(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Property(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Suburb_Average(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Comparison(?:\*\*|:)?\s*[:\-]?\s*(.+)/i;
-    content.split('\n').forEach(line => {
-       const match = line.match(regex);
-       if (match) {
-         metrics.push({
-           label: match[1].trim(),
-           value: match[2].trim(),
-           suburbAverage: match[3].trim(),
-           comparison: match[4].trim()
-         });
-       }
-    });
-    return metrics;
-  };
-
-  const parsePropertyAttributes = (content: string): PropertyAttributes | undefined => {
-    const attrs: PropertyAttributes = {};
-    let found = false;
-    const createRegex = (key: string) => new RegExp(`${key}(?:\\*\\*)?\\s*[:\\-]?\\s*([^,\\n]+)`, 'i');
-    const patterns = {
-      type: createRegex('Type'),
-      beds: /(?:Bedrooms|Beds)(?:\*\*)?\s*[:\-]?\s*(\d+)/i,
-      baths: /(?:Bathrooms|Baths)(?:\*\*)?\s*[:\-]?\s*(\d+)/i,
-      living: /(?:Living Areas|Living)(?:\*\*)?\s*[:\-]?\s*(\d+)/i,
-      carport: /(?:Carport Spaces|Carport|Parking)(?:\*\*)?\s*[:\-]?\s*(\d+)/i,
-      land: /(?:Land Size|Land)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      buildingSize: /(?:Building Size)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      buildingCoverage: /(?:Building Coverage)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      groundElevation: /(?:Ground Elevation)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      roofHeight: /(?:Roof Height)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      solar: /(?:Solar Power|Solar Panel|Solar)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      features: /(?:Key Features|Features)(?:\*\*)?\s*[:\-]?\s*([^.\n]+)/i,
-      lat: /(?:Latitude)(?:\*\*)?\s*[:\-]?\s*([\d.-]+)/i,
-      lng: /(?:Longitude)(?:\*\*)?\s*[:\-]?\s*([\d.-]+)/i
-    };
-    const typeMatch = content.match(patterns.type);
-    if (typeMatch) { attrs.type = typeMatch[1].trim(); found = true; }
-    const bedsMatch = content.match(patterns.beds);
-    if (bedsMatch) { attrs.beds = bedsMatch[1].trim(); found = true; }
-    const bathsMatch = content.match(patterns.baths);
-    if (bathsMatch) { attrs.baths = bathsMatch[1].trim(); found = true; }
-    const livingMatch = content.match(patterns.living);
-    if (livingMatch) { attrs.living = livingMatch[1].trim(); found = true; }
-    const carportMatch = content.match(patterns.carport);
-    if (carportMatch) { attrs.carport = carportMatch[1].trim(); found = true; }
-    const landMatch = content.match(patterns.land);
-    if (landMatch) { attrs.land = landMatch[1].trim(); found = true; }
-    const buildSizeMatch = content.match(patterns.buildingSize);
-    if (buildSizeMatch) { attrs.buildingSize = buildSizeMatch[1].trim(); found = true; }
-    const buildCovMatch = content.match(patterns.buildingCoverage);
-    if (buildCovMatch) { attrs.buildingCoverage = buildCovMatch[1].trim(); found = true; }
-    const elevMatch = content.match(patterns.groundElevation);
-    if (elevMatch) { attrs.groundElevation = elevMatch[1].trim(); found = true; }
-    const roofMatch = content.match(patterns.roofHeight);
-    if (roofMatch) { attrs.roofHeight = roofMatch[1].trim(); found = true; }
-    const solarMatch = content.match(patterns.solar);
-    if (solarMatch) { attrs.solar = solarMatch[1].trim(); found = true; }
-    const latMatch = content.match(patterns.lat);
-    if (latMatch) { attrs.lat = parseFloat(latMatch[1]); found = true; }
-    const lngMatch = content.match(patterns.lng);
-    if (lngMatch) { attrs.lng = parseFloat(lngMatch[1]); found = true; }
-    const featuresMatch = content.match(patterns.features);
-    if (featuresMatch) { 
-      attrs.features = featuresMatch[1].split(',').map(s => s.trim()).filter(s => s.length > 0);
-      found = true; 
-    }
-    return found ? attrs : undefined;
-  };
-
-  const parseSections = (text: string): SectionData[] => {
-    const sections: SectionData[] = [];
-    const parts = text.split(/(?:\r?\n|^)##\s+/);
-    parts.forEach(part => {
-      if (!part.trim()) return;
-      const lines = part.trim().split('\n');
-      const titleLine = lines[0].trim();
-      const content = lines.slice(1).join('\n').trim();
-      if (!content) return;
-      let icon: SectionData['icon'] = 'info';
-      let title = titleLine;
-      let priceHistory: PricePoint[] | undefined;
-      let propertyAttributes: PropertyAttributes | undefined;
-      let schools: School[] | undefined;
-      let investmentMetrics: InvestmentMetric[] | undefined;
-      let comparables: Comparable[] | undefined;
-      let suburbProfile: SuburbSubsection[] | undefined;
-      if (titleLine.includes('Property Overview')) {
-        icon = 'house'; title = 'Property Overview';
-        propertyAttributes = parsePropertyAttributes(content);
-      } else if (titleLine.includes('Price History')) {
-        icon = 'chart'; title = 'Price History & Trends';
-        priceHistory = parsePriceHistory(content);
-      } else if (titleLine.includes('Suburb Profile') || titleLine.includes('Searcher Profile') || titleLine.includes('Demographics')) {
-        icon = 'map'; title = 'Suburb Profile';
-        const subSections: SuburbSubsection[] = [];
-        const rawSubsections = content.split(/(?:\r?\n|^)(?:###|\*\*)\s+/);
-        rawSubsections.forEach(s => {
-           const trimmed = s.trim();
-           if (!trimmed) return;
-           const sLines = trimmed.split('\n');
-           const subTitle = sLines[0].replace(/\*\*/g, '').trim();
-           const subContent = sLines.slice(1).join('\n').trim();
-           if (subTitle && subContent && subTitle.length < 100) { subSections.push({title: subTitle, content: subContent}); }
-        });
-        if (subSections.length > 0) { suburbProfile = subSections; }
-      } else if (titleLine.includes('School Catchment')) {
-        icon = 'school'; title = 'School Catchment & Ratings';
-        schools = parseSchools(content);
-      } else if (titleLine.includes('Investment') || titleLine.includes('Value')) {
-        icon = 'people'; title = 'Investment Insights';
-        investmentMetrics = parseInvestmentMetrics(content);
-        comparables = parseComparables(content);
-      }
-      if (titleLine.length > 0 && title !== text.trim()) {
-         sections.push({ title, content, icon, priceHistory, propertyAttributes, schools, investmentMetrics, comparables, suburbProfile });
-      }
-    });
-    return sections;
-  };
-
-  const sections = state.data ? parseSections(state.data.text) : [];
+  const sections = state.data ? parseAnalysisSections(state.data.text) : [];
   const activeSectionData = sections.find(s => s.title === activeTab);
 
   const getTabIcon = (tab: string) => {
@@ -483,7 +281,7 @@ export default function App() {
               <div className="bg-white rounded-b-xl rounded-tr-xl border border-t-0 border-slate-200 shadow-sm min-h-[400px]">
                 {activeSectionData ? (
                   <div className="w-full">
-                    <AnalysisCard 
+                    <IntelligenceCard 
                       section={activeSectionData} 
                       searchAddress={address} 
                       allSections={sections}
@@ -523,7 +321,7 @@ export default function App() {
                     <div className="space-y-6">
                       {sections.map((section, index) => (
                         <div key={index} className="mb-6 break-inside-avoid">
-                          <AnalysisCard 
+                          <IntelligenceCard 
                             section={section} 
                             searchAddress={address} 
                             hideMap={true} 
