@@ -40,7 +40,9 @@ export const analyzeProperty = async (
           - Roof Height: [Value]
           - Solar Power: [Details, e.g., 6.6kW system or None]
           - Listing Status: [Active/Sold/Pending]
-          - Key Features: [Comma-separated list of amenities, e.g., Solar Panels, Pool, Garage]`
+          - Key Features: [Comma-separated list of amenities, e.g., Solar Panels, Pool, Garage]
+          - Latitude: [Decimal Value]
+          - Longitude: [Decimal Value]`
       },
       {
         key: 'investment',
@@ -58,9 +60,9 @@ export const analyzeProperty = async (
 
           **Comparable Properties**
           Find 5 properties in the same suburb that have **SOLD** recently (last 6-12 months).
-          **CRITICAL:** You must find the actual SOLD PRICE. 
+          **CRITICAL:** You must find the actual SOLD PRICE and coordinates. 
           List them in this EXACT format (one per line):
-          - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Beds/Baths/Car/Land]
+          - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Beds/Baths/Car/Land], Lat: [Value], Lng: [Value]
 
           Then provide the qualitative analysis:
           - **Market Assessment:** Fairly priced?

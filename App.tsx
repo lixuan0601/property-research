@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Search, MapPin, Loader2, Building2, Download, Check, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, Scale } from 'lucide-react';
 import { analyzeProperty } from './services/geminiService';
@@ -31,7 +32,6 @@ export default function App() {
   // Initialize Google Places Autocomplete
   useEffect(() => {
     const loadGoogleMapsScript = () => {
-      // If script is already loaded or Google Maps is available
       if ((window as any).google?.maps?.places) {
         initAutocomplete();
         return;
@@ -43,7 +43,6 @@ export default function App() {
 
       const script = document.createElement('script');
       script.id = 'google-maps-script';
-      // Using the specific API key provided for Google Maps Places API
       script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyB0dDMOVbcQkBfYpFu5HJY6N0HdMUFBPsk&libraries=places`;
       script.async = true;
       script.defer = true;
@@ -53,15 +52,13 @@ export default function App() {
 
     const initAutocomplete = () => {
       if (!inputRef.current || !(window as any).google) return;
-      
-      // Prevent double initialization
       if (autoCompleteRef.current) return;
 
       try {
         autoCompleteRef.current = new (window as any).google.maps.places.Autocomplete(inputRef.current, {
           types: ['address'],
           fields: ['formatted_address'],
-          componentRestrictions: { country: 'au' }, // Restrict to Australia
+          componentRestrictions: { country: 'au' },
         });
 
         autoCompleteRef.current.addListener('place_changed', () => {
@@ -80,21 +77,33 @@ export default function App() {
 
   const handleSearch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address.trim()) return;
+    const targetAddress = address.trim();
+    if (!targetAddress) return;
 
-    setState({ status: 'loading', data: null });
-    setProgress({}); // Reset progress state
-    // Reset tab to first one on new search
+    setState({ status: 'loading', data: null, coordinates: undefined });
+    setProgress({});
     setActiveTab(TABS[0]);
 
+    // 1. Geocode the address immediately using Google Geocoder
+    if ((window as any).google?.maps?.Geocoder) {
+      const geocoder = new (window as any).google.maps.Geocoder();
+      geocoder.geocode({ address: targetAddress }, (results: any, status: string) => {
+        if (status === 'OK' && results[0]) {
+          const coords = results[0].geometry.location.toJSON();
+          setState(prev => ({ ...prev, coordinates: coords }));
+        }
+      });
+    }
+
+    // 2. Start AI Analysis
     try {
-      const result = await analyzeProperty(address, (update) => {
+      const result = await analyzeProperty(targetAddress, (update) => {
         setProgress(prev => ({
           ...prev,
           [update.key]: update
         }));
       });
-      setState({ status: 'success', data: result });
+      setState(prev => ({ ...prev, status: 'success', data: result }));
     } catch (err: any) {
       setState({ 
         status: 'error', 
@@ -106,37 +115,21 @@ export default function App() {
 
   const handleDownloadReport = async () => {
     if (isGeneratingPdf || !(window as any).html2pdf) return;
-    
     setIsGeneratingPdf(true);
-    
-    // We render the report in a visible overlay to ensure html2canvas can capture it properly.
-    // Wait 1.5s to ensure DOM is painted, fonts loaded, and charts rendered.
     setTimeout(async () => {
       const element = printRef.current;
       if (!element) {
         setIsGeneratingPdf(false);
         return;
       }
-
-      // Configuration designed to prevent content cutoff:
-      // 1. Set PDF margins to 0. We handle margins via CSS padding in the container.
-      // 2. The container is explicitly 210mm wide (A4 width).
-      // 3. This ensures 1:1 mapping between the HTML element and the PDF page.
       const opt = {
         margin: 0, 
         filename: `PropSearch_Intel_${address.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
-          logging: false,
-          scrollY: 0,
-          // Removing windowWidth/windowHeight forces html2canvas to use the element's natural scrollWidth/Height
-        },
+        html2canvas: { scale: 2, useCORS: true, logging: false, scrollY: 0 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
-
       try {
         await (window as any).html2pdf().set(opt).from(element).save();
       } catch (error) {
@@ -147,15 +140,9 @@ export default function App() {
     }, 1500);
   };
 
-  // Extract price history from text content with improved parsing
   const parsePriceHistory = (content: string): PricePoint[] => {
     const points: PricePoint[] = [];
     const lines = content.split('\n');
-    
-    // Regex Logic:
-    // Date: captures yyyy-mm-dd
-    // Price: captures everything until it sees ", Type" or ", Event" or end of line. 
-    // This ensures prices like "$1,200,000" are captured fully despite the comma.
     const dateRegex = /Date(?:\*\*|:)?\s*[:\-]?\s*([\d-]{8,10})/i;
     const priceRegex = /Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:,\s*(?:Type|Event)|$)/i;
     const typeRegex = /Type(?:\*\*|:)?\s*[:\-]?\s*([a-zA-Z]+)/i;
@@ -164,46 +151,25 @@ export default function App() {
     lines.forEach(line => {
       const dateMatch = line.match(dateRegex);
       const priceMatch = line.match(priceRegex);
-      
       if (dateMatch) {
         const dateStr = dateMatch[1];
-        
         let price: number | null = null;
         let priceStr = 'N/A';
-        
         if (priceMatch) {
           priceStr = priceMatch[1].trim();
-          
-          // Enhanced numeric parsing for k/m suffixes
-          // Remove $ and , first
           let cleanVal = priceStr.replace(/[$,]/g, '').toLowerCase().trim();
           let multiplier = 1;
-
-          if (cleanVal.endsWith('k')) {
-            multiplier = 1000;
-            cleanVal = cleanVal.replace('k', '');
-          } else if (cleanVal.endsWith('m')) {
-            multiplier = 1000000;
-            cleanVal = cleanVal.replace('m', '');
-          }
-
+          if (cleanVal.endsWith('k')) { multiplier = 1000; cleanVal = cleanVal.replace('k', ''); }
+          else if (cleanVal.endsWith('m')) { multiplier = 1000000; cleanVal = cleanVal.replace('m', ''); }
           const parsed = parseFloat(cleanVal);
-          if (!isNaN(parsed)) {
-            price = parsed * multiplier;
-          }
+          if (!isNaN(parsed)) { price = parsed * multiplier; }
         }
-
         const typeMatch = line.match(typeRegex);
         const eventMatch = line.match(eventRegex);
-        
         let type: 'sale' | 'rent' = 'sale';
         const typeStr = typeMatch ? typeMatch[1].toLowerCase() : '';
         const eventStr = eventMatch ? eventMatch[1].toLowerCase() : '';
-        
-        if (typeStr.includes('rent') || eventStr.includes('rent') || eventStr.includes('lease')) {
-          type = 'rent';
-        }
-
+        if (typeStr.includes('rent') || eventStr.includes('rent') || eventStr.includes('lease')) { type = 'rent'; }
         points.push({
           date: dateStr,
           price: price,
@@ -213,7 +179,6 @@ export default function App() {
         });
       }
     });
-
     return points;
   };
 
@@ -221,7 +186,6 @@ export default function App() {
     const schools: School[] = [];
     const lines = content.split('\n');
     const regex = /Name(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Type(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Rating(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:[,;]\s*Distance(?:\*\*|:)?\s*[:\-]?\s*(.+))?$/i;
-
     lines.forEach(line => {
       const match = line.match(regex);
       if (match) {
@@ -239,9 +203,7 @@ export default function App() {
   const parseComparables = (content: string): Comparable[] => {
     const comparables: Comparable[] = [];
     const lines = content.split('\n');
-    // Regex for: "- Address: X, Sold_Price: Y, Sold_Date: Z, Features: W"
-    const regex = /Address(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Date(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Features(?:\*\*|:)?\s*[:\-]?\s*(.+)/i;
-  
+    const regex = /Address(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Date(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Features(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:[,;]\s*Lat(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?(?:[,;]\s*Lng(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?$/i;
     lines.forEach(line => {
       const match = line.match(regex);
       if (match) {
@@ -249,7 +211,9 @@ export default function App() {
           address: match[1].trim(),
           soldPrice: match[2].trim(),
           soldDate: match[3].trim(),
-          features: match[4].trim()
+          features: match[4].trim(),
+          lat: match[5] ? parseFloat(match[5]) : undefined,
+          lng: match[6] ? parseFloat(match[6]) : undefined
         });
       }
     });
@@ -258,10 +222,7 @@ export default function App() {
 
   const parseInvestmentMetrics = (content: string): InvestmentMetric[] => {
     const metrics: InvestmentMetric[] = [];
-    // Regex for: "- Metric: X, Property: Y, Suburb_Average: Z, Comparison: W"
-    // Using loose matching to handle bolding (**) or slight variations
     const regex = /Metric(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Property(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Suburb_Average(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Comparison(?:\*\*|:)?\s*[:\-]?\s*(.+)/i;
-    
     content.split('\n').forEach(line => {
        const match = line.match(regex);
        if (match) {
@@ -279,9 +240,7 @@ export default function App() {
   const parsePropertyAttributes = (content: string): PropertyAttributes | undefined => {
     const attrs: PropertyAttributes = {};
     let found = false;
-
     const createRegex = (key: string) => new RegExp(`${key}(?:\\*\\*)?\\s*[:\\-]?\\s*([^,\\n]+)`, 'i');
-
     const patterns = {
       type: createRegex('Type'),
       beds: /(?:Bedrooms|Beds)(?:\*\*)?\s*[:\-]?\s*(\d+)/i,
@@ -294,65 +253,53 @@ export default function App() {
       groundElevation: /(?:Ground Elevation)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
       roofHeight: /(?:Roof Height)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
       solar: /(?:Solar Power|Solar Panel|Solar)(?:\*\*)?\s*[:\-]?\s*([^,\n]+)/i,
-      features: /(?:Key Features|Features)(?:\*\*)?\s*[:\-]?\s*([^.\n]+)/i
+      features: /(?:Key Features|Features)(?:\*\*)?\s*[:\-]?\s*([^.\n]+)/i,
+      lat: /(?:Latitude)(?:\*\*)?\s*[:\-]?\s*([\d.-]+)/i,
+      lng: /(?:Longitude)(?:\*\*)?\s*[:\-]?\s*([\d.-]+)/i
     };
-
     const typeMatch = content.match(patterns.type);
     if (typeMatch) { attrs.type = typeMatch[1].trim(); found = true; }
-
     const bedsMatch = content.match(patterns.beds);
     if (bedsMatch) { attrs.beds = bedsMatch[1].trim(); found = true; }
-
     const bathsMatch = content.match(patterns.baths);
     if (bathsMatch) { attrs.baths = bathsMatch[1].trim(); found = true; }
-
     const livingMatch = content.match(patterns.living);
     if (livingMatch) { attrs.living = livingMatch[1].trim(); found = true; }
-    
     const carportMatch = content.match(patterns.carport);
     if (carportMatch) { attrs.carport = carportMatch[1].trim(); found = true; }
-
     const landMatch = content.match(patterns.land);
     if (landMatch) { attrs.land = landMatch[1].trim(); found = true; }
-
     const buildSizeMatch = content.match(patterns.buildingSize);
     if (buildSizeMatch) { attrs.buildingSize = buildSizeMatch[1].trim(); found = true; }
-
     const buildCovMatch = content.match(patterns.buildingCoverage);
     if (buildCovMatch) { attrs.buildingCoverage = buildCovMatch[1].trim(); found = true; }
-
     const elevMatch = content.match(patterns.groundElevation);
     if (elevMatch) { attrs.groundElevation = elevMatch[1].trim(); found = true; }
-
     const roofMatch = content.match(patterns.roofHeight);
     if (roofMatch) { attrs.roofHeight = roofMatch[1].trim(); found = true; }
-
     const solarMatch = content.match(patterns.solar);
     if (solarMatch) { attrs.solar = solarMatch[1].trim(); found = true; }
-
+    const latMatch = content.match(patterns.lat);
+    if (latMatch) { attrs.lat = parseFloat(latMatch[1]); found = true; }
+    const lngMatch = content.match(patterns.lng);
+    if (lngMatch) { attrs.lng = parseFloat(lngMatch[1]); found = true; }
     const featuresMatch = content.match(patterns.features);
     if (featuresMatch) { 
       attrs.features = featuresMatch[1].split(',').map(s => s.trim()).filter(s => s.length > 0);
       found = true; 
     }
-
     return found ? attrs : undefined;
   };
 
   const parseSections = (text: string): SectionData[] => {
     const sections: SectionData[] = [];
-    // Improved split regex to be more robust against varying newlines or leading whitespace
     const parts = text.split(/(?:\r?\n|^)##\s+/);
-    
     parts.forEach(part => {
       if (!part.trim()) return;
-      
       const lines = part.trim().split('\n');
       const titleLine = lines[0].trim();
       const content = lines.slice(1).join('\n').trim();
-
       if (!content) return;
-
       let icon: SectionData['icon'] = 'info';
       let title = titleLine;
       let priceHistory: PricePoint[] | undefined;
@@ -361,66 +308,43 @@ export default function App() {
       let investmentMetrics: InvestmentMetric[] | undefined;
       let comparables: Comparable[] | undefined;
       let suburbProfile: SuburbSubsection[] | undefined;
-
       if (titleLine.includes('Property Overview')) {
-        icon = 'house';
-        title = 'Property Overview';
+        icon = 'house'; title = 'Property Overview';
         propertyAttributes = parsePropertyAttributes(content);
       } else if (titleLine.includes('Price History')) {
-        icon = 'chart';
-        title = 'Price History & Trends';
+        icon = 'chart'; title = 'Price History & Trends';
         priceHistory = parsePriceHistory(content);
       } else if (titleLine.includes('Suburb Profile') || titleLine.includes('Searcher Profile') || titleLine.includes('Demographics')) {
-        icon = 'map';
-        title = 'Suburb Profile';
-        // Parse Subsections based on ### headers
+        icon = 'map'; title = 'Suburb Profile';
         const subSections: SuburbSubsection[] = [];
-        // More robust splitting for subsections, allowing for variable spacing or bold markdown
         const rawSubsections = content.split(/(?:\r?\n|^)(?:###|\*\*)\s+/);
-        
         rawSubsections.forEach(s => {
            const trimmed = s.trim();
            if (!trimmed) return;
            const sLines = trimmed.split('\n');
-           const subTitle = sLines[0].replace(/\*\*/g, '').trim(); // Clean potential trailing bold
+           const subTitle = sLines[0].replace(/\*\*/g, '').trim();
            const subContent = sLines.slice(1).join('\n').trim();
-           
-           // Filter out empty or too short subsections
-           // Ensure title isn't too long (likely false positive) and content exists
-           if (subTitle && subContent && subTitle.length < 100) { 
-             subSections.push({title: subTitle, content: subContent});
-           }
+           if (subTitle && subContent && subTitle.length < 100) { subSections.push({title: subTitle, content: subContent}); }
         });
-        
-        if (subSections.length > 0) {
-           suburbProfile = subSections;
-        }
-
+        if (subSections.length > 0) { suburbProfile = subSections; }
       } else if (titleLine.includes('School Catchment')) {
-        icon = 'school';
-        title = 'School Catchment & Ratings';
+        icon = 'school'; title = 'School Catchment & Ratings';
         schools = parseSchools(content);
       } else if (titleLine.includes('Investment') || titleLine.includes('Value')) {
-        icon = 'people';
-        title = 'Investment Insights';
+        icon = 'people'; title = 'Investment Insights';
         investmentMetrics = parseInvestmentMetrics(content);
-        // Also try parsing comparables from this section as they are now merged in the prompt
         comparables = parseComparables(content);
       }
-
       if (titleLine.length > 0 && title !== text.trim()) {
          sections.push({ title, content, icon, priceHistory, propertyAttributes, schools, investmentMetrics, comparables, suburbProfile });
       }
     });
-
     return sections;
   };
 
-  // Get active section data
   const sections = state.data ? parseSections(state.data.text) : [];
   const activeSectionData = sections.find(s => s.title === activeTab);
 
-  // Icons for tabs
   const getTabIcon = (tab: string) => {
     switch(tab) {
       case 'Property Overview': return LayoutDashboard;
@@ -434,7 +358,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -446,7 +369,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Hero Search Area */}
       <div className="bg-white border-b border-slate-200 pb-12 pt-16 px-4">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
@@ -482,14 +404,12 @@ export default function App() {
             </button>
           </form>
 
-          {/* Analysis Progress Bar */}
           {(state.status === 'loading' || (state.status === 'success' && Object.keys(progress).length > 0)) && (
             <AnalysisProgress progress={progress} />
           )}
         </div>
       </div>
 
-      {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {state.status === 'idle' && (
           <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
@@ -512,7 +432,6 @@ export default function App() {
 
         {state.status === 'success' && state.data && (
           <>
-            {/* Interactive View */}
             <div className="animate-fade-in-up">
               <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                 <div>
@@ -536,7 +455,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Tabs Navigation */}
               <div className="mb-6 overflow-x-auto pb-2 custom-scrollbar">
                 <div className="flex space-x-2 min-w-max border-b border-slate-200 px-1">
                   {TABS.map((tab) => {
@@ -562,11 +480,15 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Tab Content */}
               <div className="bg-white rounded-b-xl rounded-tr-xl border border-t-0 border-slate-200 shadow-sm min-h-[400px]">
                 {activeSectionData ? (
-                  <div className="h-full">
-                    <AnalysisCard section={activeSectionData} searchAddress={address} />
+                  <div className="w-full">
+                    <AnalysisCard 
+                      section={activeSectionData} 
+                      searchAddress={address} 
+                      allSections={sections}
+                      subjectCoords={state.coordinates}
+                    />
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-[400px] text-slate-400 bg-slate-50/30">
@@ -580,19 +502,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Visible Overlay for PDF Generation (ensures html2canvas captures visible content) */}
             {isGeneratingPdf && (
               <div className="fixed inset-0 z-[9999] bg-slate-100 flex justify-center overflow-auto pt-8">
-                {/* Floating Loading Badge */}
                 <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-6 py-3 rounded-full shadow-lg z-[10000] flex items-center gap-3 backdrop-blur-sm">
                    <Loader2 className="animate-spin text-blue-400" />
                    <span className="font-medium">Generating PDF Report...</span>
                 </div>
                 
-                {/* The Printable Content - Centered, A4 width (210mm), with internal padding (15mm) acting as margins */}
-                {/* This layout matches exactly 1:1 with the A4 PDF page when margins are 0 */}
                 <div ref={printRef} className="bg-white w-[210mm] min-h-screen p-[15mm] shadow-2xl mb-8 text-slate-900 mx-auto">
-                    {/* Header */}
                     <div className="text-center mb-8 border-b border-slate-300 pb-4">
                       <div className="flex items-center justify-center gap-2 mb-2">
                         <Building2 className="text-blue-600 h-8 w-8" />
@@ -606,7 +523,13 @@ export default function App() {
                     <div className="space-y-6">
                       {sections.map((section, index) => (
                         <div key={index} className="mb-6 break-inside-avoid">
-                          <AnalysisCard section={section} searchAddress={address} hideMap={true} />
+                          <AnalysisCard 
+                            section={section} 
+                            searchAddress={address} 
+                            hideMap={true} 
+                            allSections={sections} 
+                            subjectCoords={state.coordinates}
+                          />
                         </div>
                       ))}
                     </div>

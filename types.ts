@@ -1,3 +1,4 @@
+
 export interface SearchResult {
   text: string;
   groundingChunks: GroundingChunk[];
@@ -39,6 +40,8 @@ export interface PropertyAttributes {
   groundElevation?: string;
   roofHeight?: string;
   features?: string[];
+  lat?: number;
+  lng?: number;
 }
 
 export interface School {
@@ -60,6 +63,8 @@ export interface Comparable {
   soldPrice: string;
   soldDate: string;
   features: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface SuburbSubsection {
@@ -83,4 +88,5 @@ export interface AnalysisState {
   status: 'idle' | 'loading' | 'success' | 'error';
   data: SearchResult | null;
   error?: string;
+  coordinates?: { lat: number, lng: number };
 }
