@@ -1,9 +1,10 @@
+
 import { PropertyAttributes, SectionData } from '../types';
 
 export const extractPropertyAttributes = (content: string): PropertyAttributes | undefined => {
   const attrs: PropertyAttributes = {};
   let found = false;
-  const createRegex = (key: string) => new RegExp(`${key}(?:\\*\\*)?\\s*[:\\-]?\\s*([^,\\n]+)`, 'i');
+  const createRegex = (key: string) => new RegExp(`${key}(?:\\*\\*)?\\s*[:\\-]?\s*([^\\n]+)`, 'i');
   
   const patterns = {
     type: createRegex('Type'),
