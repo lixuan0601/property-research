@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ExternalLink, Globe } from 'lucide-react';
 import { GroundingChunk } from '../types';
@@ -14,7 +15,7 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
   // Explicitly typing the Map key/value and casting the entry tuple fixes type inference for uniqueSources
   const uniqueSources = Array.from(
     new Map<string, GroundingChunk>(
-      webSources.map((item) => [item.web!.uri, item] as [string, GroundingChunk])
+      webSources.map((item) => [item.web!.uri!, item] as [string, GroundingChunk])
     ).values()
   );
 
@@ -45,7 +46,7 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
                 {chunk.web!.title}
               </p>
               <p className="text-xs text-slate-400 group-hover:text-blue-400 truncate mt-0.5">
-                {new URL(chunk.web!.uri).hostname}
+                {new URL(chunk.web!.uri!).hostname}
               </p>
             </div>
             <ExternalLink size={14} className="text-slate-300 group-hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { TrendingUp, Scale, Home, Tag, Calendar, Map as MapIcon, Crosshair } from 'lucide-react';
 import { InvestmentMetric, Comparable } from '../types';
@@ -150,10 +151,6 @@ export const InvestmentInsightsSection: React.FC<InvestmentInsightsSectionProps>
             </div>
          </div>
       )}
-
-      <div className="prose prose-slate prose-sm max-w-none pt-6 border-t border-slate-100">
-        {formatContent(content)}
-      </div>
     </div>
   );
 };

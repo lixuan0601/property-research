@@ -6,8 +6,8 @@ export interface SearchResult {
 
 export interface GroundingChunk {
   web?: {
-    uri: string;
-    title: string;
+    uri?: string;
+    title?: string;
   };
 }
 
@@ -89,4 +89,11 @@ export interface AnalysisState {
   data: SearchResult | null;
   error?: string;
   coordinates?: { lat: number, lng: number };
+}
+
+export type ViewMode = 'talk' | 'insight';
+
+export interface AgentSearchResult {
+  answer: string;
+  sources: GroundingChunk[];
 }
