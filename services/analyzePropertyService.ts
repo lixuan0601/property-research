@@ -7,15 +7,15 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Deep analysis for a specific property address.
- * Optimized for maximum speed using Gemini 3 Flash with thinking disabled.
+ * Optimized for maximum speed using Gemini 2.5 Flash.
  */
 export const analyzeProperty = async (
   address: string,
   onProgress?: (progress: SectionProgress) => void
 ): Promise<SearchResult> => {
   try {
-    // Using gemini-3-flash-preview for the fastest possible response times
-    const modelId = "gemini-3-flash-preview"; 
+    // Using gemini-2.5-flash for the fastest possible response times
+    const modelId = "gemini-2.5-flash"; 
     const config = {
       tools: [{ googleSearch: {} }],
       // Disable thinking budget to reduce latency and generate immediate output
@@ -70,7 +70,7 @@ export const analyzeProperty = async (
         prompt: `${basePrompt}
           Structure your response starting with the header:
           ## 📈 Price History
-          Search all real estate platforms (domain.com.au, realestate.com.au, property.com.au) for the COMPLETE historical price data of this property. 
+          Search all real estate platforms (domain.com.au, realestate.com.au, property.com.au, www.onthehouse.com.au, ) for the COMPLETE historical price data of this property. 
           Find every listing event: Listed for Sale, Sold, Listed for Rent, and Leased. 
           Return ALL detected records in this EXACT format (one per line):
           - Date: YYYY-MM-DD, Price: [Value], Type: [Sale/Rent], Event: [Event Description]`
