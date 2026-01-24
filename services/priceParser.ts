@@ -79,7 +79,7 @@ export const extractPriceHistory = (content: string): PricePoint[] => {
 };
 
 export const parsePriceHistorySection = (content: string): Partial<SectionData> => ({
-  title: 'Price History & Trends',
+  title: 'Price History',
   icon: 'chart',
   priceHistory: extractPriceHistory(content)
 });

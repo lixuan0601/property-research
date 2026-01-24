@@ -1,12 +1,165 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Search, MapPin, Loader2, Building2, Download, MessageSquare, Info, LayoutDashboard, TrendingUp, GraduationCap, Map, Lightbulb, ExternalLink } from 'lucide-react';
+import { 
+  Search, MapPin, Loader2, Building2, Download, MessageSquare, 
+  Info, LayoutDashboard, TrendingUp, GraduationCap, Map, 
+  Lightbulb, ExternalLink, Home, Tag, Sparkles, DollarSign, 
+  BedDouble, Calendar, CheckCircle2, ChevronRight
+} from 'lucide-react';
 import { analyzeProperty } from './services/analyzePropertyService';
 import { searchPropertiesAgent } from './services/searchPropertiesService';
 import { parseAnalysisSections } from './services/dataParser';
 import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult } from './types';
 import { IntelligenceCard } from './components/IntelligenceCard';
 import { AnalysisProgress } from './components/AnalysisProgress';
+
+// Helper to render agent responses with rich formatting
+const AgentResponseRenderer = ({ text }: { text: string }) => {
+  // Clean up global markdown artifacts like double asterisks
+  const cleanText = text.replace(/\*\*/g, '');
+  const lines = cleanText.split('\n');
+  const elements: React.ReactNode[] = [];
+  let currentCard: { title: string; items: string[] } | null = null;
+
+  const getStatusColor = (status: string) => {
+    const s = status.toUpperCase();
+    if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500' };
+    if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500' };
+    if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500' };
+    if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500' };
+    return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500' };
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    // Detect property heading: ### [STATUS] Address
+    if (trimmed.startsWith('### ')) {
+      if (currentCard) {
+        elements.push(renderPropertyCard(currentCard, elements.length));
+      }
+      const content = trimmed.substring(4);
+      currentCard = { title: content, items: [] };
+    } else if (trimmed.startsWith('- ') && currentCard) {
+      currentCard.items.push(trimmed.substring(2));
+    } else {
+      if (currentCard) {
+        elements.push(renderPropertyCard(currentCard, elements.length));
+        currentCard = null;
+      }
+      elements.push(
+        <p key={`p-${idx}`} className="mb-4 text-slate-600 leading-relaxed last:mb-0 text-sm">
+          {highlightKeywords(trimmed)}
+        </p>
+      );
+    }
+  });
+
+  if (currentCard) {
+    elements.push(renderPropertyCard(currentCard, elements.length));
+  }
+
+  function highlightKeywords(str: string) {
+    const keywords = ['SOLD', 'FOR SALE', 'FOR RENT', 'LEASED', 'RECENTLY SOLD', 'CONTINGENT', 'ACTIVE', 'PENDING'];
+    let parts: React.ReactNode[] = [str];
+    
+    keywords.forEach(word => {
+      const newParts: React.ReactNode[] = [];
+      parts.forEach(part => {
+        if (typeof part !== 'string') {
+          newParts.push(part);
+          return;
+        }
+        const regex = new RegExp(`(${word})`, 'gi');
+        const segments = part.split(regex);
+        segments.forEach((seg, i) => {
+          if (seg.toUpperCase() === word) {
+            const colors = getStatusColor(seg);
+            newParts.push(
+              <span key={`${word}-${i}`} className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold mx-1 border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
+                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>
+                {seg.toUpperCase()}
+              </span>
+            );
+          } else if (seg) {
+            newParts.push(seg);
+          }
+        });
+      });
+      parts = newParts;
+    });
+    return parts;
+  }
+
+  function renderPropertyCard(card: { title: string; items: string[] }, key: number) {
+    const statusMatch = card.title.match(/\[(.*?)\]/);
+    const status = statusMatch ? statusMatch[1] : 'Listing';
+    const address = card.title.replace(/\[.*?\]/, '').trim();
+    const colors = getStatusColor(status);
+
+    // Extract price for top-right highlighting
+    const priceItem = card.items.find(i => i.toLowerCase().includes('price'));
+    const priceValue = priceItem ? priceItem.split(':')[1]?.trim() : null;
+    const otherItems = card.items.filter(i => !i.toLowerCase().includes('price'));
+
+    return (
+      <div key={`card-${key}`} className="my-6 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
+        <div className="p-6">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
+            <div className="flex items-start gap-4">
+              <div className="mt-1 p-2 bg-blue-50 rounded-full text-blue-600 border border-blue-100 flex-shrink-0 group-hover:scale-110 transition-transform">
+                <Home size={18} />
+              </div>
+              <div className="flex flex-col">
+                <h4 className="font-bold text-slate-800 text-base leading-tight group-hover:text-blue-700 transition-colors">{address}</h4>
+                <div className="mt-2 flex items-center gap-3">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
+                    <Tag size={10} className="mr-1.5" /> {status}
+                  </span>
+                  {card.items.find(i => i.toLowerCase().includes('listed')) && (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                      <Calendar size={12} />
+                      <span>{card.items.find(i => i.toLowerCase().includes('listed'))?.split(':')[1]?.trim()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {priceValue && (
+              <div className="flex flex-col md:items-end">
+                <span className="text-xl font-extrabold text-blue-600 tracking-tight">{priceValue}</span>
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-0.5">Estimated Price</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 pt-4 border-t border-slate-100">
+             {otherItems.filter(i => !i.toLowerCase().includes('listed')).map((item, i) => {
+               const [label, ...valParts] = item.split(':');
+               const value = valParts.join(':').trim();
+               const isFeatures = label.toLowerCase().includes('feat');
+
+               return (
+                 <div key={i} className={`flex flex-col ${isFeatures ? 'md:col-span-2' : ''}`}>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                      {label.trim()}
+                    </span>
+                    <span className={`text-sm ${isFeatures ? 'text-slate-600 leading-relaxed' : 'text-slate-800 font-semibold'}`}>
+                      {highlightKeywords(value)}
+                    </span>
+                 </div>
+               );
+             })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="agent-response-content max-w-4xl">{elements}</div>;
+};
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewMode | null>(null);
@@ -33,7 +186,7 @@ export default function App() {
   const TABS = [
     'Property Overview',
     'Investment Insights',
-    'Price History & Trends',
+    'Price History',
     'Suburb Profile',
     'School Catchment & Ratings'
   ];
@@ -146,7 +299,7 @@ export default function App() {
   const getTabIcon = (tab: string) => {
     switch(tab) {
       case 'Property Overview': return LayoutDashboard;
-      case 'Price History & Trends': return TrendingUp;
+      case 'Price History': return TrendingUp;
       case 'Suburb Profile': return Map;
       case 'School Catchment & Ratings': return GraduationCap;
       case 'Investment Insights': return Lightbulb;
@@ -159,7 +312,7 @@ export default function App() {
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveView(null)}>
-            <div className="bg-blue-600 p-2 rounded-lg">
+            <div className="bg-blue-600 p-2 rounded-lg shadow-sm">
               <Building2 className="text-white h-6 w-6" />
             </div>
             <span className="font-bold text-xl tracking-tight text-slate-800">PropSearch<span className="text-blue-600">Intel</span></span>
@@ -167,7 +320,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="bg-white border-b border-slate-200 pb-12 pt-16 px-4">
+      <div className="bg-white border-b border-slate-200 pb-12 pt-16 px-4 shadow-sm">
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
             Advanced Real Estate <span className="text-blue-600">Intelligence</span>
@@ -176,14 +329,14 @@ export default function App() {
           <div className="flex flex-wrap justify-center gap-4 mb-10">
             <button 
               onClick={() => { setActiveView('talk'); setInsightState({status:'idle', data:null}); }}
-              className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'talk' ? 'bg-blue-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-blue-200'}`}
+              className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'talk' ? 'bg-blue-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-blue-200 hover:shadow-md'}`}
             >
               <MessageSquare size={24} />
               Talk to AI Agent
             </button>
             <button 
               onClick={() => { setActiveView('insight'); setAgentStatus('idle'); setAgentResult(null); }}
-              className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'insight' ? 'bg-indigo-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-indigo-200'}`}
+              className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'insight' ? 'bg-indigo-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-indigo-200 hover:shadow-md'}`}
             >
               <Info size={24} />
               Property Insight
@@ -192,11 +345,14 @@ export default function App() {
 
           {activeView === 'talk' && (
             <div className="max-w-2xl mx-auto animate-fade-in">
-              <p className="text-slate-500 mb-6">Ask the AI Agent to find properties, suburbs, or market trends for you.</p>
+              <p className="text-slate-500 mb-6 flex items-center justify-center gap-2">
+                <Sparkles size={16} className="text-blue-500" />
+                Ask the AI Agent to find properties, suburbs, or market trends for you.
+              </p>
               <form onSubmit={handleAgentSearch} className="relative group">
                 <input
                   type="text"
-                  className="block w-full pl-6 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm hover:shadow-md transition-all text-lg"
+                  className="block w-full pl-6 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 shadow-sm hover:shadow-md transition-all text-lg"
                   placeholder="e.g. Find me 3-bed houses in Paddington under $2M..."
                   value={agentQuery}
                   onChange={(e) => setAgentQuery(e.target.value)}
@@ -204,7 +360,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={agentStatus === 'loading' || !agentQuery.trim()}
-                  className="absolute inset-y-2 right-2 px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 transition-colors flex items-center justify-center"
+                  className="absolute inset-y-2.5 right-2.5 px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 transition-colors flex items-center justify-center shadow-md"
                 >
                   {agentStatus === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
                 </button>
@@ -222,7 +378,7 @@ export default function App() {
                 <input
                   ref={inputRef}
                   type="text"
-                  className="block w-full pl-12 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 shadow-sm hover:shadow-md transition-all text-lg"
+                  className="block w-full pl-12 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 shadow-sm hover:shadow-md transition-all text-lg"
                   placeholder="Enter property address..."
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
@@ -230,7 +386,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={insightState.status === 'loading' || !address.trim()}
-                  className="absolute inset-y-2 right-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-slate-300 transition-colors flex items-center justify-center"
+                  className="absolute inset-y-2.5 right-2.5 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-slate-300 transition-colors flex items-center justify-center shadow-md"
                 >
                   {insightState.status === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
                 </button>
@@ -243,24 +399,33 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {activeView === 'talk' && agentResult && (
-          <div className="animate-fade-in space-y-8">
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm leading-relaxed text-lg text-slate-800 prose prose-blue max-w-none">
-              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                <MessageSquare className="text-blue-600" /> Search Results
+          <div className="animate-fade-in space-y-12">
+            <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm leading-relaxed text-slate-800 prose prose-blue max-w-none">
+              <h2 className="text-2xl font-bold mb-8 flex items-center gap-3 text-slate-900">
+                <div className="bg-blue-50 p-2.5 rounded-2xl text-blue-600 shadow-sm">
+                  <Sparkles size={28} />
+                </div>
+                Market Search Intelligence
               </h2>
-              {agentResult.answer.split('\n').map((para, i) => para.trim() ? <p key={i}>{para}</p> : null)}
+              <AgentResponseRenderer text={agentResult.answer} />
             </div>
             {agentResult.sources.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {agentResult.sources.map((src, i) => src.web && (
-                  <a key={i} href={src.web.uri} target="_blank" rel="noopener" className="p-4 bg-white border border-slate-100 rounded-xl hover:border-blue-500 transition-all flex items-center justify-between group">
-                    <div className="flex-1 truncate mr-4">
-                      <p className="font-semibold text-sm truncate">{src.web.title}</p>
-                      <p className="text-xs text-slate-400 truncate">{src.web.uri}</p>
-                    </div>
-                    <ExternalLink size={16} className="text-slate-300 group-hover:text-blue-600" />
-                  </a>
-                ))}
+              <div className="animate-fade-in pt-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-8 ml-2 flex items-center gap-4">
+                  <div className="w-12 h-0.5 bg-slate-200 rounded-full"></div>
+                  Verification Sources
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {agentResult.sources.map((src, i) => src.web && (
+                    <a key={i} href={src.web.uri} target="_blank" rel="noopener" className="p-5 bg-white border border-slate-100 rounded-2xl hover:border-blue-500 hover:shadow-xl transition-all flex items-center justify-between group">
+                      <div className="flex-1 truncate mr-4">
+                        <p className="font-bold text-sm truncate text-slate-700 group-hover:text-blue-700 transition-colors">{src.web.title}</p>
+                        <p className="text-[10px] text-slate-400 truncate mt-1.5 font-mono font-medium">{src.web.uri}</p>
+                      </div>
+                      <ExternalLink size={16} className="text-slate-300 group-hover:text-blue-600 flex-shrink-0 transition-all group-hover:translate-x-1 group-hover:-translate-y-1" />
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -270,10 +435,10 @@ export default function App() {
           <div className="animate-fade-in">
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Intelligence Report</h2>
-                <span className="text-sm text-slate-500 font-medium px-3 py-1 bg-white border border-slate-200 rounded-full shadow-sm mt-1 inline-block">For: {address}</span>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Intelligence Report</h2>
+                <span className="text-xs text-slate-500 font-bold px-4 py-1.5 bg-white border border-slate-200 rounded-full shadow-sm mt-2 inline-block uppercase tracking-wider">For: {address}</span>
               </div>
-              <button onClick={handleDownloadReport} disabled={isGeneratingPdf} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg font-bold">
+              <button onClick={handleDownloadReport} disabled={isGeneratingPdf} className="flex items-center gap-2 px-8 py-3.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-lg font-bold hover:shadow-indigo-200 active:scale-95">
                 {isGeneratingPdf ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
                 {isGeneratingPdf ? 'Generating PDF...' : 'Download Report'}
               </button>
@@ -284,28 +449,31 @@ export default function App() {
                 const Icon = getTabIcon(tab);
                 const isActive = activeTab === tab;
                 return (
-                  <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center gap-2 px-4 py-3 text-sm font-bold rounded-t-xl transition-all relative ${isActive ? 'text-indigo-600 bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
-                    <Icon size={16} /> {tab}
+                  <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center gap-2.5 px-6 py-4 text-sm font-bold rounded-t-2xl transition-all relative whitespace-nowrap ${isActive ? 'text-indigo-600 bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 hover:bg-white hover:text-slate-700'}`}>
+                    <Icon size={18} strokeWidth={isActive ? 2.5 : 2} /> {tab}
                     {isActive && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px] bg-white z-10"></div>}
                   </button>
                 );
               })}
             </div>
 
-            <div className="bg-white rounded-b-2xl rounded-tr-2xl border border-t-0 border-slate-200 shadow-sm min-h-[400px]">
+            <div className="bg-white rounded-b-3xl rounded-tr-3xl border border-t-0 border-slate-200 shadow-sm min-h-[400px]">
               {activeSectionData ? (
                 <IntelligenceCard section={activeSectionData} searchAddress={address} allSections={sections} subjectCoords={insightState.coordinates} />
               ) : (
-                <div className="flex items-center justify-center h-[400px] text-slate-400">No data available for {activeTab}</div>
+                <div className="flex items-center justify-center h-[400px] text-slate-400 font-medium italic">No data available for {activeTab}</div>
               )}
             </div>
           </div>
         )}
 
         {!activeView && (
-          <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Welcome to PropSearch Intel</h3>
-            <p className="text-slate-500 max-w-md mx-auto">Select a tool above to start your real estate journey. Search for properties with the AI Agent or get deep insights for a specific address.</p>
+          <div className="text-center py-32 border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50/50 flex flex-col items-center">
+            <div className="bg-white p-6 rounded-full shadow-lg border border-slate-100 mb-8">
+              <Building2 className="text-blue-600" size={48} />
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-4 tracking-tight">Welcome to PropSearch Intel</h3>
+            <p className="text-slate-500 max-w-md mx-auto leading-relaxed">Select a tool above to start your real estate journey. Search for properties with the AI Agent or get deep insights for a specific address.</p>
           </div>
         )}
       </main>
@@ -313,12 +481,12 @@ export default function App() {
       {isGeneratingPdf && (
         <div className="fixed inset-0 z-[9999] bg-slate-100/90 backdrop-blur flex justify-center overflow-auto pt-8">
            <div ref={printRef} className="bg-white w-[210mm] min-h-screen p-[15mm] shadow-2xl mb-8 text-slate-900 mx-auto">
-              <div className="text-center mb-8 border-b border-slate-300 pb-4">
-                <Building2 className="text-indigo-600 h-10 w-10 mx-auto mb-2" />
-                <h1 className="text-2xl font-bold">Market Intelligence Report</h1>
-                <h2 className="text-lg text-slate-600">{address}</h2>
+              <div className="text-center mb-12 border-b border-slate-300 pb-8">
+                <Building2 className="text-indigo-600 h-12 w-12 mx-auto mb-4" />
+                <h1 className="text-3xl font-extrabold tracking-tight">Market Intelligence Report</h1>
+                <h2 className="text-xl text-slate-500 font-medium mt-2">{address}</h2>
               </div>
-              <div className="space-y-6">
+              <div className="space-y-10">
                 {sections.map((section, idx) => (
                   <div key={idx} className="break-inside-avoid">
                     <IntelligenceCard section={section} searchAddress={address} hideMap={true} allSections={sections} subjectCoords={insightState.coordinates} />
