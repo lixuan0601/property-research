@@ -324,7 +324,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
 
   useEffect(() => {
-    if (activeView !== 'insight') return;
+    // FIX: Removed the early return for activeView so script loads if ANY tool is selected
+    if (!activeView) return;
 
     const loadGoogleMapsScript = () => {
       if ((window as any).google?.maps?.places) {
