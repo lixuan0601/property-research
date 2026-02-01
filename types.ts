@@ -97,3 +97,12 @@ export interface AgentSearchResult {
   answer: string;
   sources: GroundingChunk[];
 }
+
+export interface PropertyData {
+  address: string;
+  status: string;
+  price?: string;
+  date?: string;
+  features?: string;
+  rawItems: string[];
+}

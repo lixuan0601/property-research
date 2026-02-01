@@ -1,5 +1,5 @@
-
-import { useMemo } from 'react';
+// Fix: Added missing React import to resolve 'React' namespace error
+import React, { useMemo } from 'react';
 import { PricePoint } from '../types';
 
 interface PriceChartProps {

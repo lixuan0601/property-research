@@ -40,21 +40,22 @@ export const searchPropertiesAgent = async (query: string): Promise<AgentSearchR
   return withRetry(async () => {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Search for properties and real estate information based on this request: "${query}". 
-        CRITICAL: Focus exclusively on listings and activity from the last 90 days. 
+        model: 'gemini-3-flash-preview',
+        contents: `Search for real-time property listings and market activity for: "${query}". 
         
-        If you find specific property listings, format them clearly using this structure for each:
-        ### [STATUS] Address
-        - **Price**: [Price amount]
-        - **Attributes**: [Beds/Baths/Cars]
-        - **Features**: [Brief list of key features]
-        - **Listed**: [Approximate date or recentness]
+        CRITICAL: 
+        1. Prioritize results from the last 90 days.
+        2. Format property listings using this EXACT structure:
+           ### [STATUS] FULL_STREET_ADDRESS, SUBURB, STATE
+           - Price: [Exact Price or 'Price on request']
+           - Attributes: [Beds/Baths/Cars]
+           - Features: [Brief summary]
+           - Listed: [Approximate date/timeline]
+           
+        STATUS options: SOLD, FOR SALE, FOR RENT, or LEASED.
         
-        Use STATUS values like: SOLD, FOR SALE, FOR RENT, or LEASED.
-        Ensure the address is clearly in the heading.
-        
-        Start with a short summary of what you found, then list the properties, and end with a market insight.`,
+        The ADDRESS must be complete enough for Google Maps geocoding. 
+        Start with a data-driven overview of the current market activity for this area.`,
         config: {
           tools: [{ googleSearch: {} }],
           thinkingConfig: { thinkingBudget: 0 },

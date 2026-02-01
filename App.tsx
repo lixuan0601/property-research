@@ -1,70 +1,106 @@
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { 
   Search, MapPin, Loader2, Building2, Download, MessageSquare, 
-  Info, LayoutDashboard, TrendingUp, GraduationCap, Map, 
+  Info, LayoutDashboard, TrendingUp, GraduationCap, Map as MapIcon, 
   Lightbulb, ExternalLink, Home, Tag, Sparkles, DollarSign, 
-  BedDouble, Calendar, CheckCircle2, ChevronRight
+  BedDouble, Calendar, CheckCircle2, ChevronRight, List
 } from 'lucide-react';
 import { analyzeProperty } from './services/analyzePropertyService';
 import { searchPropertiesAgent } from './services/searchPropertiesService';
 import { parseAnalysisSections } from './services/dataParser';
-import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult } from './types';
+import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult, PropertyData } from './types';
 import { IntelligenceCard } from './components/IntelligenceCard';
 import { AnalysisProgress } from './components/AnalysisProgress';
+import { MultiMarkerMap } from './components/MultiMarkerMap';
 
-// Helper to render agent responses with rich formatting
-const AgentResponseRenderer = ({ text }: { text: string }) => {
-  // Clean up global markdown artifacts like double asterisks
-  const cleanText = text.replace(/\*\*/g, '');
-  const lines = cleanText.split('\n');
-  const elements: React.ReactNode[] = [];
-  let currentCard: { title: string; items: string[] } | null = null;
+const STATUS_KEYWORDS = ['SOLD', 'FOR SALE', 'FOR RENT', 'LEASED', 'RECENTLY SOLD', 'CONTINGENT', 'ACTIVE', 'PENDING'];
 
-  const getStatusColor = (status: string) => {
-    const s = status.toUpperCase();
-    if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500' };
-    if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500' };
-    if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500' };
-    if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500' };
-    return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500' };
-  };
+const getStatusColor = (status: string) => {
+  const s = status.toUpperCase();
+  if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500' };
+  if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500' };
+  if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500' };
+  if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500' };
+  return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500' };
+};
 
-  lines.forEach((line, idx) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+const getStatusFromTitle = (title: string) => {
+  const statusMatch = title.match(/\[(.*?)\]/);
+  if (statusMatch) return statusMatch[1].toUpperCase();
+  const foundKeyword = STATUS_KEYWORDS.find(k => title.toUpperCase().includes(k));
+  return foundKeyword || 'OTHER';
+};
 
-    // Detect property heading: ### [STATUS] Address
-    if (trimmed.startsWith('### ')) {
-      if (currentCard) {
-        elements.push(renderPropertyCard(currentCard, elements.length));
-      }
-      const content = trimmed.substring(4);
-      currentCard = { title: content, items: [] };
-    } else if (trimmed.startsWith('- ') && currentCard) {
-      currentCard.items.push(trimmed.substring(2));
-    } else {
-      if (currentCard) {
-        elements.push(renderPropertyCard(currentCard, elements.length));
-        currentCard = null;
-      }
-      elements.push(
-        <p key={`p-${idx}`} className="mb-4 text-slate-600 leading-relaxed last:mb-0 text-sm">
-          {highlightKeywords(trimmed)}
-        </p>
-      );
-    }
-  });
+// Main Agent Result Component
+const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [mapHighlight, setMapHighlight] = useState<string | undefined>(undefined);
 
-  if (currentCard) {
-    elements.push(renderPropertyCard(currentCard, elements.length));
-  }
-
-  function highlightKeywords(str: string) {
-    const keywords = ['SOLD', 'FOR SALE', 'FOR RENT', 'LEASED', 'RECENTLY SOLD', 'CONTINGENT', 'ACTIVE', 'PENDING'];
-    let parts: React.ReactNode[] = [str];
+  // Parse logic to extract properties and intro text
+  const { introText, categorizedCards, allProperties } = useMemo(() => {
+    const cleanText = result.answer.replace(/\*\*/g, '');
+    const lines = cleanText.split('\n');
     
-    keywords.forEach(word => {
+    const intro: string[] = [];
+    const categories: Record<string, PropertyData[]> = {};
+    const all: PropertyData[] = [];
+    let current: PropertyData | null = null;
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      if (trimmed.startsWith('### ')) {
+        if (current) {
+          const status = current.status;
+          if (!categories[status]) categories[status] = [];
+          categories[status].push(current);
+          all.push(current);
+        }
+        const title = trimmed.substring(4);
+        const status = getStatusFromTitle(title);
+        current = { 
+          address: title.replace(/\[.*?\]/, '').trim(), 
+          status, 
+          rawItems: [] 
+        };
+      } else if (trimmed.startsWith('- ') && current) {
+        current.rawItems.push(trimmed.substring(2));
+        const lower = trimmed.toLowerCase();
+        if (lower.includes('price:')) current.price = trimmed.split(':')[1]?.trim();
+        if (lower.includes('listed:')) current.date = trimmed.split(':')[1]?.trim();
+        if (lower.includes('feat:') || lower.includes('attr:')) {
+          const val = trimmed.split(':')[1]?.trim();
+          current.features = current.features ? `${current.features} • ${val}` : val;
+        }
+      } else {
+        if (!current) {
+          intro.push(trimmed);
+        } else {
+          const status = current.status;
+          if (!categories[status]) categories[status] = [];
+          categories[status].push(current);
+          all.push(current);
+          current = null;
+          intro.push(trimmed);
+        }
+      }
+    });
+
+    if (current) {
+      const status = (current as PropertyData).status;
+      if (!categories[status]) categories[status] = [];
+      categories[status].push(current);
+      all.push(current);
+    }
+
+    return { introText: intro, categorizedCards: categories, allProperties: all };
+  }, [result]);
+
+  const highlightKeywords = (str: string) => {
+    let parts: React.ReactNode[] = [str];
+    STATUS_KEYWORDS.forEach(word => {
       const newParts: React.ReactNode[] = [];
       parts.forEach(part => {
         if (typeof part !== 'string') {
@@ -90,75 +126,170 @@ const AgentResponseRenderer = ({ text }: { text: string }) => {
       parts = newParts;
     });
     return parts;
-  }
+  };
 
-  function renderPropertyCard(card: { title: string; items: string[] }, key: number) {
-    const statusMatch = card.title.match(/\[(.*?)\]/);
-    const status = statusMatch ? statusMatch[1] : 'Listing';
-    const address = card.title.replace(/\[.*?\]/, '').trim();
-    const colors = getStatusColor(status);
+  const handleShowOnMap = (address: string) => {
+    setMapHighlight(address);
+    setViewMode('map');
+  };
 
-    // Extract price for top-right highlighting
-    const priceItem = card.items.find(i => i.toLowerCase().includes('price'));
-    const priceValue = priceItem ? priceItem.split(':')[1]?.trim() : null;
-    const otherItems = card.items.filter(i => !i.toLowerCase().includes('price'));
-
+  const renderPropertyCard = (prop: PropertyData, key: string) => {
+    const colors = getStatusColor(prop.status);
     return (
-      <div key={`card-${key}`} className="my-6 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
+      <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
         <div className="p-6">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
+          <div className="flex justify-between items-start gap-4 mb-4">
             <div className="flex items-start gap-4">
-              <div className="mt-1 p-2 bg-blue-50 rounded-full text-blue-600 border border-blue-100 flex-shrink-0 group-hover:scale-110 transition-transform">
-                <Home size={18} />
+              <div className="mt-1 p-2 bg-blue-50 rounded-full text-blue-500 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                <Home size={16} />
               </div>
               <div className="flex flex-col">
-                <h4 className="font-bold text-slate-800 text-base leading-tight group-hover:text-blue-700 transition-colors">{address}</h4>
-                <div className="mt-2 flex items-center gap-3">
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
-                    <Tag size={10} className="mr-1.5" /> {status}
+                <h4 className="font-bold text-slate-800 text-sm leading-tight group-hover:text-blue-700 transition-colors">
+                  {prop.address.replace(new RegExp(prop.status, 'gi'), '').trim() || prop.address}
+                </h4>
+                <div className="mt-2.5 flex flex-wrap gap-3 items-center">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>
+                    {prop.status}
                   </span>
-                  {card.items.find(i => i.toLowerCase().includes('listed')) && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-                      <Calendar size={12} />
-                      <span>{card.items.find(i => i.toLowerCase().includes('listed'))?.split(':')[1]?.trim()}</span>
+                  {prop.date && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      <Calendar size={11} className="text-slate-300" />
+                      <span>{prop.date}</span>
                     </div>
                   )}
+                  <button 
+                    onClick={() => handleShowOnMap(prop.address)}
+                    className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wider ml-2 group/btn"
+                  >
+                    <MapIcon size={12} className="group-hover/btn:scale-110 transition-transform" />
+                    <span>View on Map</span>
+                  </button>
                 </div>
               </div>
             </div>
-            
-            {priceValue && (
-              <div className="flex flex-col md:items-end">
-                <span className="text-xl font-extrabold text-blue-600 tracking-tight">{priceValue}</span>
-                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-0.5">Estimated Price</span>
+            {prop.price && (
+              <div className="flex flex-col items-end flex-shrink-0 text-right">
+                <span className="text-xl font-extrabold text-blue-600 tracking-tight">{prop.price}</span>
+                <span className="text-[10px] text-slate-400 uppercase font-extrabold tracking-widest mt-0.5">Estimated Price</span>
               </div>
             )}
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 pt-4 border-t border-slate-100">
-             {otherItems.filter(i => !i.toLowerCase().includes('listed')).map((item, i) => {
-               const [label, ...valParts] = item.split(':');
-               const value = valParts.join(':').trim();
-               const isFeatures = label.toLowerCase().includes('feat');
-
-               return (
-                 <div key={i} className={`flex flex-col ${isFeatures ? 'md:col-span-2' : ''}`}>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                      {label.trim()}
-                    </span>
-                    <span className={`text-sm ${isFeatures ? 'text-slate-600 leading-relaxed' : 'text-slate-800 font-semibold'}`}>
-                      {highlightKeywords(value)}
-                    </span>
-                 </div>
-               );
-             })}
+          <div className="pt-4 border-t border-slate-100">
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              <span className="font-extrabold text-slate-300 uppercase text-[9px] tracking-widest mr-2">Features</span>
+              <span className="text-slate-600 group-hover:text-slate-800 transition-colors">{prop.features || 'Details available on request'}</span>
+            </p>
           </div>
         </div>
       </div>
     );
-  }
+  };
 
-  return <div className="agent-response-content max-w-4xl">{elements}</div>;
+  const statusDisplayOrder = ['SOLD', 'RECENTLY SOLD', 'FOR SALE', 'ACTIVE', 'FOR RENT', 'LEASED', 'PENDING', 'CONTINGENT', 'OTHER'];
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-900">
+          <div className="bg-blue-50 p-2.5 rounded-2xl text-blue-600 shadow-sm">
+            <Sparkles size={28} />
+          </div>
+          Market Search Intelligence
+        </h2>
+        
+        {allProperties.length > 0 && (
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner w-fit">
+            <button 
+              onClick={() => { setViewMode('list'); setMapHighlight(undefined); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <List size={16} /> List View
+            </button>
+            <button 
+              onClick={() => setViewMode('map')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'map' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <MapIcon size={16} /> Map View
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="intro-section">
+        {introText.map((p, i) => (
+          <p key={i} className="mb-4 text-slate-600 leading-relaxed text-sm last:mb-0">
+            {highlightKeywords(p)}
+          </p>
+        ))}
+      </div>
+
+      {viewMode === 'list' ? (
+        <div className="space-y-10">
+          {statusDisplayOrder.map(status => {
+            const cards = categorizedCards[status];
+            if (!cards || cards.length === 0) return null;
+            const colors = getStatusColor(status);
+            return (
+              <div key={status} className="category-group animate-fade-in">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className={`h-px flex-1 ${colors.border.replace('border', 'bg')}`}></div>
+                  <h3 className={`text-xs font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
+                    {status} <span className="ml-1 opacity-50">({cards.length})</span>
+                  </h3>
+                  <div className={`h-px flex-1 ${colors.border.replace('border', 'bg')}`}></div>
+                </div>
+                <div className="grid grid-cols-1 gap-6">
+                  {cards.map((card, idx) => renderPropertyCard(card, `${status}-${idx}`))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="animate-fade-in space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <div className="flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm"></span> 
+                <span>Sold</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-blue-500 rounded-full shadow-sm"></span> 
+                <span>For Sale</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-green-500 rounded-full shadow-sm"></span> 
+                <span>For Rent</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-yellow-500 rounded-full shadow-sm"></span> 
+                <span>Pending</span>
+              </div>
+            </div>
+            {mapHighlight && (
+              <button 
+                onClick={() => setMapHighlight(undefined)}
+                className="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 transition-all"
+              >
+                Clear Focus
+              </button>
+            )}
+          </div>
+          <div className="w-full h-[600px] bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-inner relative group/map">
+            <MultiMarkerMap 
+              comparables={allProperties.map(p => ({
+                address: p.address,
+                status: p.status,
+                label: p.price
+              }))}
+              highlightAddress={mapHighlight}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function App() {
@@ -300,7 +431,7 @@ export default function App() {
     switch(tab) {
       case 'Property Overview': return LayoutDashboard;
       case 'Price History': return TrendingUp;
-      case 'Suburb Profile': return Map;
+      case 'Suburb Profile': return MapIcon;
       case 'School Catchment & Ratings': return GraduationCap;
       case 'Investment Insights': return Lightbulb;
       default: return LayoutDashboard;
@@ -400,14 +531,8 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {activeView === 'talk' && agentResult && (
           <div className="animate-fade-in space-y-12">
-            <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm leading-relaxed text-slate-800 prose prose-blue max-w-none">
-              <h2 className="text-2xl font-bold mb-8 flex items-center gap-3 text-slate-900">
-                <div className="bg-blue-50 p-2.5 rounded-2xl text-blue-600 shadow-sm">
-                  <Sparkles size={28} />
-                </div>
-                Market Search Intelligence
-              </h2>
-              <AgentResponseRenderer text={agentResult.answer} />
+            <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm leading-relaxed text-slate-800 max-w-none">
+              <AgentResultView result={agentResult} />
             </div>
             {agentResult.sources.length > 0 && (
               <div className="animate-fade-in pt-4">
