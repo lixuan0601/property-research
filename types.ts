@@ -103,6 +103,8 @@ export interface PropertyData {
   status: string;
   price?: string;
   date?: string;
-  features?: string;
+  features?: string; // This will hold the "Specs" (Beds/Baths/Land)
+  landSize?: string;
+  description?: string; // This will hold the narrative description
   rawItems: string[];
 }

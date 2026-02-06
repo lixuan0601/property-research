@@ -49,7 +49,8 @@ export const searchPropertiesAgent = async (query: string): Promise<AgentSearchR
            ### [STATUS] FULL_STREET_ADDRESS, SUBURB, STATE
            - Price: [Exact Price or 'Price on request']
            - Attributes: [Beds/Baths/Cars]
-           - Features: [Brief summary]
+           - Land Size: [e.g. 800sqm, if available]
+           - Summary: [Brief narrative description/highlight of the property]
            - Listed: [Approximate date/timeline]
            
         STATUS options: SOLD, FOR SALE, FOR RENT, or LEASED.

@@ -4,7 +4,7 @@ import {
   Search, MapPin, Loader2, Building2, Download, MessageSquare, 
   Info, LayoutDashboard, TrendingUp, GraduationCap, Map as MapIcon, 
   Lightbulb, ExternalLink, Home, Tag, Sparkles, DollarSign, 
-  BedDouble, Calendar, CheckCircle2, ChevronRight, List
+  BedDouble, Calendar, CheckCircle2, ChevronRight, List, Clock
 } from 'lucide-react';
 import { analyzeProperty } from './services/analyzePropertyService';
 import { searchPropertiesAgent } from './services/searchPropertiesService';
@@ -18,11 +18,11 @@ const STATUS_KEYWORDS = ['SOLD', 'FOR SALE', 'FOR RENT', 'LEASED', 'RECENTLY SOL
 
 const getStatusColor = (status: string) => {
   const s = status.toUpperCase();
-  if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500' };
-  if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500' };
-  if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500' };
-  if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500' };
-  return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500' };
+  if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500', highlight: 'bg-red-50/50 text-red-700 border-red-100' };
+  if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500', highlight: 'bg-blue-50/50 text-blue-700 border-blue-100' };
+  if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500', highlight: 'bg-emerald-50/50 text-emerald-700 border-emerald-100' };
+  if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500', highlight: 'bg-amber-50/50 text-amber-700 border-amber-100' };
+  return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500', highlight: 'bg-slate-50/50 text-slate-700 border-slate-100' };
 };
 
 const getStatusFromTitle = (title: string) => {
@@ -67,12 +67,31 @@ const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
         };
       } else if (trimmed.startsWith('- ') && current) {
         current.rawItems.push(trimmed.substring(2));
-        const lower = trimmed.toLowerCase();
-        if (lower.includes('price:')) current.price = trimmed.split(':')[1]?.trim();
-        if (lower.includes('listed:')) current.date = trimmed.split(':')[1]?.trim();
-        if (lower.includes('feat:') || lower.includes('attr:')) {
-          const val = trimmed.split(':')[1]?.trim();
-          current.features = current.features ? `${current.features} • ${val}` : val;
+        const lineContent = trimmed.substring(2).trim();
+        const lower = lineContent.toLowerCase();
+        
+        if (lower.startsWith('price:')) {
+          current.price = lineContent.split(':')[1]?.trim();
+        } else if (lower.startsWith('listed:') || lower.startsWith('sold date:') || lower.startsWith('sold:')) {
+          current.date = lineContent.split(':')[1]?.trim() || lineContent.replace(/sold\s*[:\-]/i, '').trim();
+        } else if (lower.startsWith('attributes:') || lower.startsWith('attr:')) {
+          const val = lineContent.split(':')[1]?.trim();
+          if (val) current.features = current.features ? `${val} • ${current.features}` : val;
+        } else if (lower.startsWith('land') || lower.startsWith('land size:')) {
+          const val = lineContent.split(':')[1]?.trim();
+          if (val) current.landSize = val;
+        } else if (lower.startsWith('summary:') || lower.startsWith('features:') || lower.startsWith('feat:')) {
+          const val = lineContent.split(':')[1]?.trim();
+          if (val) current.description = current.description ? `${current.description} ${val}` : val;
+        } else {
+          // Robust check for date strings
+          const dateRegex = /(?:sold|listed|on)\s*(?:on|at)?\s*\w+\s+\d{1,2},?\s+\d{4}/i;
+          if (dateRegex.test(lineContent)) {
+             current.date = lineContent.replace(/sold\s*[:\-]/i, '').trim();
+          } else {
+             // Treat anything else as part of the narrative description
+             current.description = current.description ? `${current.description} ${lineContent}` : lineContent;
+          }
         }
       } else {
         if (!current) {
@@ -135,6 +154,11 @@ const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
 
   const renderPropertyCard = (prop: PropertyData, key: string) => {
     const colors = getStatusColor(prop.status);
+    const isSold = prop.status.includes('SOLD');
+    
+    // Combine features/attributes with land size for the primary specs line
+    const specs = [prop.features, prop.landSize].filter(Boolean).join(' • ');
+
     return (
       <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
         <div className="p-6">
@@ -147,17 +171,13 @@ const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
                 <h4 className="font-bold text-slate-800 text-sm leading-tight group-hover:text-blue-700 transition-colors">
                   {prop.address.replace(new RegExp(prop.status, 'gi'), '').trim() || prop.address}
                 </h4>
+                
                 <div className="mt-2.5 flex flex-wrap gap-3 items-center">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
                     <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>
                     {prop.status}
                   </span>
-                  {prop.date && (
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      <Calendar size={11} className="text-slate-300" />
-                      <span>{prop.date}</span>
-                    </div>
-                  )}
+                  
                   <button 
                     onClick={() => handleShowOnMap(prop.address)}
                     className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wider ml-2 group/btn"
@@ -168,6 +188,7 @@ const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
                 </div>
               </div>
             </div>
+            
             {prop.price && (
               <div className="flex flex-col items-end flex-shrink-0 text-right">
                 <span className="text-xl font-extrabold text-blue-600 tracking-tight">{prop.price}</span>
@@ -175,11 +196,30 @@ const AgentResultView = ({ result }: { result: AgentSearchResult }) => {
               </div>
             )}
           </div>
+
+          {/* Highlighted Date Row */}
+          {prop.date && (
+            <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border mb-4 text-xs font-bold tracking-tight animate-fade-in ${colors.highlight}`}>
+              <Clock size={14} className="opacity-70" />
+              <span>{isSold ? 'Sold on' : 'Listed on'}: {prop.date}</span>
+            </div>
+          )}
+
           <div className="pt-4 border-t border-slate-100">
-            <p className="text-xs text-slate-500 font-medium leading-relaxed">
-              <span className="font-extrabold text-slate-300 uppercase text-[9px] tracking-widest mr-2">Features</span>
-              <span className="text-slate-600 group-hover:text-slate-800 transition-colors">{prop.features || 'Details available on request'}</span>
-            </p>
+            <div className="flex flex-col gap-2">
+              {/* Features/Specs Line */}
+              <p className="text-xs text-slate-500 font-medium leading-relaxed flex items-center">
+                <span className="font-extrabold text-slate-300 uppercase text-[9px] tracking-widest mr-2 flex-shrink-0">Features</span>
+                <span className="text-slate-700 font-bold group-hover:text-slate-900 transition-colors">{specs || 'Details available on request'}</span>
+              </p>
+              
+              {/* Narrative Description Line - Put under Features */}
+              {prop.description && (
+                <p className="text-[13px] text-slate-600 leading-relaxed font-medium pl-[58px] border-l-2 border-slate-100 ml-1 mt-1 italic">
+                  {prop.description}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -324,7 +364,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
 
   useEffect(() => {
-    // FIX: Removed the early return for activeView so script loads if ANY tool is selected
     if (!activeView) return;
 
     const loadGoogleMapsScript = () => {
@@ -535,25 +574,6 @@ export default function App() {
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm leading-relaxed text-slate-800 max-w-none">
               <AgentResultView result={agentResult} />
             </div>
-            {agentResult.sources.length > 0 && (
-              <div className="animate-fade-in pt-4">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-8 ml-2 flex items-center gap-4">
-                  <div className="w-12 h-0.5 bg-slate-200 rounded-full"></div>
-                  Verification Sources
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {agentResult.sources.map((src, i) => src.web && (
-                    <a key={i} href={src.web.uri} target="_blank" rel="noopener" className="p-5 bg-white border border-slate-100 rounded-2xl hover:border-blue-500 hover:shadow-xl transition-all flex items-center justify-between group">
-                      <div className="flex-1 truncate mr-4">
-                        <p className="font-bold text-sm truncate text-slate-700 group-hover:text-blue-700 transition-colors">{src.web.title}</p>
-                        <p className="text-[10px] text-slate-400 truncate mt-1.5 font-mono font-medium">{src.web.uri}</p>
-                      </div>
-                      <ExternalLink size={16} className="text-slate-300 group-hover:text-blue-600 flex-shrink-0 transition-all group-hover:translate-x-1 group-hover:-translate-y-1" />
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
