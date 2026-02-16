@@ -122,4 +122,7 @@ export interface PropertyData {
   balcony?: boolean;
   shed?: boolean;
   grannyFlat?: boolean;
+  // Direct listing links
+  domainUrl?: string;
+  realestateUrl?: string;
 }

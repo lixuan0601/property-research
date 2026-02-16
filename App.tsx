@@ -7,12 +7,13 @@ import {
   BedDouble, Calendar, CheckCircle2, ChevronRight, List, Clock,
   Plus, Trash2, ArrowRight, ArrowLeft, X, ChevronLeft, Columns,
   Bath, Car, Maximize, Sun, Building, Scale, Waves, Zap, Battery,
-  Layout, Layers, Warehouse, Users, Target, Rocket, Activity
+  Layout, Layers, Warehouse, Users, Target, Rocket, Activity,
+  Globe, MousePointer2, AlertCircle
 } from 'lucide-react';
 import { analyzeProperty } from './services/analyzePropertyService';
 import { searchPropertiesAgent } from './services/searchPropertiesService';
 import { parseAnalysisSections } from './services/dataParser';
-import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult, PropertyData } from './types';
+import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult, PropertyData, GroundingChunk } from './types';
 import { IntelligenceCard } from './components/IntelligenceCard';
 import { AnalysisProgress } from './components/AnalysisProgress';
 import { MultiMarkerMap } from './components/MultiMarkerMap';
@@ -45,7 +46,50 @@ const getStatusFromTitle = (title: string) => {
   return foundKeyword || 'OTHER';
 };
 
-// --- Comparison View Component ---
+const toPropertySlug = (address: string) => {
+  return address
+    .toLowerCase()
+    .replace(/\//g, '-')
+    .replace(/[^\w\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+};
+
+const findUrlInGrounding = (address: string, chunks: GroundingChunk[], domain: 'domain' | 'realestate') => {
+  const targetHost = domain === 'domain' ? 'domain.com.au' : 'realestate.com.au';
+  const addressParts = address.toLowerCase().split(/[ ,]+/).filter(p => p.length > 2);
+  
+  // Find a chunk where the URL contains most of the address parts
+  // We score them to find the best match
+  let bestMatch: GroundingChunk | null = null;
+  let highestScore = 0;
+
+  chunks.forEach(c => {
+    if (!c.web?.uri) return;
+    const uri = c.web.uri.toLowerCase();
+    if (!uri.includes(targetHost)) return;
+
+    // Direct matches score higher
+    const matches = addressParts.filter(part => uri.includes(part)).length;
+    
+    // Pattern matches score higher
+    let patternScore = 0;
+    if (domain === 'domain' && uri.includes('property-profile')) patternScore = 2;
+    if (domain === 'realestate' && uri.includes('/property/')) patternScore = 2;
+
+    const totalScore = matches + patternScore;
+
+    if (totalScore > highestScore) {
+      highestScore = totalScore;
+      bestMatch = c;
+    }
+  });
+
+  // Only return if we have a reasonably confident match (at least 3 parts matching)
+  return highestScore >= 3 ? bestMatch?.web?.uri : null;
+};
+
 const ComparisonCarousel = ({ 
   items, 
   onBack 
@@ -189,7 +233,6 @@ const ComparisonCarousel = ({
   );
 };
 
-// --- Agent Result Component ---
 const AgentResultView = ({ 
   result, 
   onAddToCompare,
@@ -202,7 +245,6 @@ const AgentResultView = ({
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [mapHighlight, setMapHighlight] = useState<string | undefined>(undefined);
 
-  // Parse logic to extract properties and intro text
   const { introText, categorizedCards, allProperties } = useMemo(() => {
     const cleanText = result.answer.replace(/\*\*/g, '');
     const lines = cleanText.split('\n');
@@ -231,7 +273,7 @@ const AgentResultView = ({
           address, 
           status, 
           rawItems: [],
-          type: 'House' // Default
+          type: 'House'
         };
       } else if (trimmed.startsWith('- ') && current) {
         current.rawItems.push(trimmed.substring(2));
@@ -242,55 +284,30 @@ const AgentResultView = ({
           current.price = lineContent.split(':')[1]?.trim();
         } else if (lower.startsWith('listed:') || lower.startsWith('sold date:') || lower.startsWith('sold:')) {
           current.date = lineContent.split(':')[1]?.trim() || lineContent.replace(/sold\s*[:\-]/i, '').trim();
+        } else if (lower.startsWith('domain:')) {
+          const url = lineContent.replace(/domain\s*[:\-]\s*/i, '').trim();
+          if (url && url.startsWith('http')) current.domainUrl = url;
+        } else if (lower.startsWith('rea:') || lower.startsWith('realestate:')) {
+          const url = lineContent.replace(/(?:rea|realestate)\s*[:\-]\s*/i, '').trim();
+          if (url && url.startsWith('http')) current.realestateUrl = url;
         } else if (lower.startsWith('attributes:') || lower.startsWith('attr:')) {
           const val = lineContent.split(':')[1]?.trim();
           if (val) {
             current.features = current.features ? `${val} • ${current.features}` : val;
-            
             const beds = val.match(/(\d+)\s*(?:bed|br)/i);
             const baths = val.match(/(\d+)\s*(?:bath|ba)/i);
             const cars = val.match(/(\d+)\s*(?:car|pkg|grg|garage)/i);
             if (beds) current.beds = beds[1];
             if (baths) current.baths = baths[1];
             if (cars) current.cars = cars[1];
-
-            if (val.toLowerCase().includes('unit')) current.type = 'Unit';
-            else if (val.toLowerCase().includes('apartment')) current.type = 'Apartment';
-            else if (val.toLowerCase().includes('townhouse')) current.type = 'Townhouse';
-            else if (val.toLowerCase().includes('land')) current.type = 'Land Only';
           }
-        } else if (lower.startsWith('land') || lower.startsWith('land size:')) {
-          const val = lineContent.split(':')[1]?.trim();
-          if (val) current.landSize = val;
         } else if (lower.startsWith('summary:') || lower.startsWith('features:') || lower.startsWith('feat:')) {
           const val = lineContent.split(':')[1]?.trim();
           if (val) {
             current.description = current.description ? `${current.description} ${val}` : val;
             const text = val.toLowerCase();
-            if (text.includes('solar') && !text.includes('battery')) current.solar = true;
-            if (text.includes('battery')) { current.solar = true; current.battery = true; }
-            if (text.includes('pool') || text.includes('swimming')) current.pool = true;
-            if (text.includes('tennis')) current.tennis = true;
-            if (text.includes('deck')) current.deck = true;
-            if (text.includes('balcony')) current.balcony = true;
-            if (text.includes('shed')) current.shed = true;
-            if (text.includes('granny') || text.includes('guest house')) current.grannyFlat = true;
-          }
-        } else {
-          const dateRegex = /(?:sold|listed|on)\s*(?:on|at)?\s*\w+\s+\d{1,2},?\s+\d{4}/i;
-          if (dateRegex.test(lineContent)) {
-             current.date = lineContent.replace(/sold\s*[:\-]/i, '').trim();
-          } else {
-             current.description = current.description ? `${current.description} ${lineContent}` : lineContent;
-             const text = lineContent.toLowerCase();
-             if (text.includes('solar') && !text.includes('battery')) current.solar = true;
-             if (text.includes('battery')) { current.solar = true; current.battery = true; }
-             if (text.includes('pool') || text.includes('swimming')) current.pool = true;
-             if (text.includes('tennis')) current.tennis = true;
-             if (text.includes('deck')) current.deck = true;
-             if (text.includes('balcony')) current.balcony = true;
-             if (text.includes('shed')) current.shed = true;
-             if (text.includes('granny') || text.includes('guest house')) current.grannyFlat = true;
+            if (text.includes('solar')) current.solar = true;
+            if (text.includes('pool')) current.pool = true;
           }
         }
       } else {
@@ -313,6 +330,12 @@ const AgentResultView = ({
       categories[status].push(current);
       all.push(current);
     }
+
+    // Post-process with grounding correlation if direct text URLs missed
+    all.forEach(prop => {
+      if (!prop.domainUrl) prop.domainUrl = findUrlInGrounding(prop.address, result.sources, 'domain');
+      if (!prop.realestateUrl) prop.realestateUrl = findUrlInGrounding(prop.address, result.sources, 'realestate');
+    });
 
     return { introText: intro, categorizedCards: categories, allProperties: all };
   }, [result]);
@@ -358,6 +381,11 @@ const AgentResultView = ({
     const specs = [prop.features, prop.landSize].filter(Boolean).join(' • ');
     const isAlreadySelected = compareList.some(item => item.id === prop.id);
 
+    // To prevent 404 errors, we prefer verified URLs from grounding.
+    // If no verified link is available, we redirect to a Google Search specifically for that property on Domain.
+    // Guessed slugs (e.g. /property-profile/slug) frequently 404 due to complex address formatting.
+    const domainProfile = prop.domainUrl || `https://www.google.com/search?q=site:domain.com.au+${encodeURIComponent(prop.address)}`;
+
     return (
       <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
         <div className="p-6">
@@ -367,9 +395,18 @@ const AgentResultView = ({
                 <Home size={16} />
               </div>
               <div className="flex flex-col">
-                <h4 className="font-bold text-slate-800 text-sm leading-tight group-hover:text-blue-700 transition-colors">
-                  {prop.address.replace(new RegExp(prop.status, 'gi'), '').trim() || prop.address}
-                </h4>
+                <div className="flex items-center gap-2 mb-1">
+                  <a 
+                    href={domainProfile}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View Property Profile (Verified Search)"
+                    className="font-bold text-slate-800 text-sm leading-tight hover:text-blue-700 transition-colors cursor-pointer border-b-2 border-transparent hover:border-blue-500/20 inline-block decoration-blue-500/30"
+                  >
+                    {prop.address.replace(new RegExp(prop.status, 'gi'), '').trim() || prop.address}
+                  </a>
+                  <ExternalLink size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
                 
                 <div className="mt-2.5 flex flex-wrap gap-3 items-center">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
@@ -541,7 +578,6 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewMode | null>(null);
   const [comparisonList, setComparisonList] = useState<PropertyData[]>([]);
   
-  // Property Insight State
   const [address, setAddress] = useState('');
   const [insightState, setInsightState] = useState<AnalysisState>({
     status: 'idle',
@@ -549,7 +585,6 @@ export default function App() {
   });
   const [insightProgress, setInsightProgress] = useState<Record<string, SectionProgress>>({});
   
-  // AI Agent State
   const [agentQuery, setAgentQuery] = useState('');
   const [agentStatus, setAgentStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [agentResult, setAgentResult] = useState<AgentSearchResult | null>(null);
@@ -620,7 +655,7 @@ export default function App() {
     try {
       const res = await searchPropertiesAgent(queryToUse);
       setAgentResult(res);
-      setAgentStatus('loading'); // Brief toggle for animation
+      setAgentStatus('loading');
       setTimeout(() => setAgentStatus('success'), 100);
     } catch (err) {
       setAgentStatus('error');
@@ -717,7 +752,6 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 relative overflow-hidden">
-        {/* Main Content Area */}
         <div className={`flex-1 overflow-y-auto transition-all duration-500 ${activeView === 'talk' && comparisonList.length > 0 ? 'mr-80' : ''}`}>
           
           {activeView !== 'compare' && (
@@ -766,6 +800,22 @@ export default function App() {
                         {agentStatus === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
                       </button>
                     </form>
+
+                    {agentStatus === 'error' && (
+                      <div className="mb-8 p-6 bg-rose-50 border border-rose-100 rounded-3xl animate-fade-in">
+                         <div className="flex items-center gap-3 text-rose-600 mb-2">
+                           <AlertCircle size={20} />
+                           <span className="font-bold">Intelligence Service Overloaded</span>
+                         </div>
+                         <p className="text-sm text-rose-500">The market intelligence model is currently experiencing high demand. Our automated retries were unsuccessful. Please try your search again in a few moments.</p>
+                         <button 
+                           onClick={(e) => handleAgentSearch(e)}
+                           className="mt-4 px-6 py-2 bg-rose-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-rose-700 transition-all shadow-md"
+                         >
+                           Retry Search
+                         </button>
+                      </div>
+                    )}
 
                     {!agentResult && agentStatus !== 'loading' && (
                       <div className="animate-fade-in">
@@ -910,7 +960,6 @@ export default function App() {
           </main>
         </div>
 
-        {/* Comparison Side Menu */}
         {activeView === 'talk' && comparisonList.length > 0 && (
           <aside className="fixed right-0 top-16 bottom-0 w-80 bg-white border-l border-slate-200 shadow-2xl flex flex-col z-50 animate-slide-in-right">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
