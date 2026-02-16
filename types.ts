@@ -113,6 +113,9 @@ export interface PropertyData {
   baths?: string;
   cars?: string;
   type?: string;
+  // Coordinates for map
+  lat?: number;
+  lng?: number;
   // Specific features
   solar?: boolean;
   battery?: boolean;

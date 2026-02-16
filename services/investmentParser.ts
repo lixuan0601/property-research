@@ -1,22 +1,34 @@
+
 import { Comparable, InvestmentMetric, SectionData } from '../types';
 
 export const extractComparables = (content: string): Comparable[] => {
   const comparables: Comparable[] = [];
   const lines = content.split('\n');
-  const regex = /Address(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Price(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Sold_Date(?:\*\*|:)?\s*[:\-]?\s*(.+?)[,;]\s*Features(?:\*\*|:)?\s*[:\-]?\s*(.+?)(?:[,;]\s*Lat(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?(?:[,;]\s*Lng(?:\*\*|:)?\s*[:\-]?\s*([\d.-]+))?$/i;
+  
   lines.forEach(line => {
-    const match = line.match(regex);
-    if (match) {
+    const trimmed = line.trim();
+    if (!trimmed.toLowerCase().includes('address')) return;
+
+    // Use flexible matching for each field to handle various delimiters and formats
+    const address = trimmed.match(/Address\s*[:\-]?\s*(.+?)(?=[,;]\s*(?:Sold_Price|Price)|$)/i)?.[1]?.trim();
+    const price = trimmed.match(/(?:Sold_Price|Price)\s*[:\-]?\s*(.+?)(?=[,;]\s*(?:Sold_Date|Date)|$)/i)?.[1]?.trim();
+    const date = trimmed.match(/(?:Sold_Date|Date)\s*[:\-]?\s*(.+?)(?=[,;]\s*Features|$)/i)?.[1]?.trim();
+    const features = trimmed.match(/Features\s*[:\-]?\s*(.+?)(?=[,;]\s*Lat|$)/i)?.[1]?.trim();
+    const lat = trimmed.match(/Lat\s*[:\-]?\s*([\d.-]+)/i)?.[1];
+    const lng = trimmed.match(/Lng\s*[:\-]?\s*([\d.-]+)/i)?.[1];
+
+    if (address && price) {
       comparables.push({
-        address: match[1].trim(),
-        soldPrice: match[2].trim(),
-        soldDate: match[3].trim(),
-        features: match[4].trim(),
-        lat: match[5] ? parseFloat(match[5]) : undefined,
-        lng: match[6] ? parseFloat(match[6]) : undefined
+        address,
+        soldPrice: price,
+        soldDate: date || 'N/A',
+        features: features || 'N/A',
+        lat: lat ? parseFloat(lat) : undefined,
+        lng: lng ? parseFloat(lng) : undefined
       });
     }
   });
+  
   return comparables;
 };
 

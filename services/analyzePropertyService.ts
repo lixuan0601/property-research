@@ -85,8 +85,11 @@ export const analyzeProperty = async (
           - Metric: Market Interest, Property: [Value], Suburb_Average: [Value], Comparison: [Above/Below/Average]
 
           **Comparable Properties**
-          List 5 recent sales in this EXACT format (one per line):
-          - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Summary], Lat: [Value], Lng: [Value]`
+          Search for the 5 most recent comparable sales.
+          MANDATORY FORMAT for each comparable (one per line):
+          - Address: [Address], Sold_Price: [Price], Sold_Date: [Date], Features: [Summary], Lat: [Value], Lng: [Value]
+          
+          CRITICAL: You must provide the exact Latitude (Lat) and Longitude (Lng) for EVERY comparable property found.`
       },
       {
         key: 'history',
@@ -137,7 +140,6 @@ export const analyzeProperty = async (
     const promises = tasks.map(async (task) => {
       const startTime = Date.now();
       try {
-        // Apply retry logic to each task individually
         const result = await withRetry(async () => {
           return await ai.models.generateContent({
             model: modelId,

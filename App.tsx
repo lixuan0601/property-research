@@ -60,8 +60,6 @@ const findUrlInGrounding = (address: string, chunks: GroundingChunk[], domain: '
   const targetHost = domain === 'domain' ? 'domain.com.au' : 'realestate.com.au';
   const addressParts = address.toLowerCase().split(/[ ,]+/).filter(p => p.length > 2);
   
-  // Find a chunk where the URL contains most of the address parts
-  // We score them to find the best match
   let bestMatch: GroundingChunk | null = null;
   let highestScore = 0;
 
@@ -70,10 +68,8 @@ const findUrlInGrounding = (address: string, chunks: GroundingChunk[], domain: '
     const uri = c.web.uri.toLowerCase();
     if (!uri.includes(targetHost)) return;
 
-    // Direct matches score higher
     const matches = addressParts.filter(part => uri.includes(part)).length;
     
-    // Pattern matches score higher
     let patternScore = 0;
     if (domain === 'domain' && uri.includes('property-profile')) patternScore = 2;
     if (domain === 'realestate' && uri.includes('/property/')) patternScore = 2;
@@ -86,7 +82,6 @@ const findUrlInGrounding = (address: string, chunks: GroundingChunk[], domain: '
     }
   });
 
-  // Only return if we have a reasonably confident match (at least 3 parts matching)
   return highestScore >= 3 ? bestMatch?.web?.uri : null;
 };
 
@@ -290,6 +285,12 @@ const AgentResultView = ({
         } else if (lower.startsWith('rea:') || lower.startsWith('realestate:')) {
           const url = lineContent.replace(/(?:rea|realestate)\s*[:\-]\s*/i, '').trim();
           if (url && url.startsWith('http')) current.realestateUrl = url;
+        } else if (lower.startsWith('lat:')) {
+          const val = lineContent.split(':')[1]?.trim();
+          if (val) current.lat = parseFloat(val);
+        } else if (lower.startsWith('lng:')) {
+          const val = lineContent.split(':')[1]?.trim();
+          if (val) current.lng = parseFloat(val);
         } else if (lower.startsWith('attributes:') || lower.startsWith('attr:')) {
           const val = lineContent.split(':')[1]?.trim();
           if (val) {
@@ -331,7 +332,6 @@ const AgentResultView = ({
       all.push(current);
     }
 
-    // Post-process with grounding correlation if direct text URLs missed
     all.forEach(prop => {
       if (!prop.domainUrl) prop.domainUrl = findUrlInGrounding(prop.address, result.sources, 'domain');
       if (!prop.realestateUrl) prop.realestateUrl = findUrlInGrounding(prop.address, result.sources, 'realestate');
@@ -381,9 +381,6 @@ const AgentResultView = ({
     const specs = [prop.features, prop.landSize].filter(Boolean).join(' • ');
     const isAlreadySelected = compareList.some(item => item.id === prop.id);
 
-    // To prevent 404 errors, we prefer verified URLs from grounding.
-    // If no verified link is available, we redirect to a Google Search specifically for that property on Domain.
-    // Guessed slugs (e.g. /property-profile/slug) frequently 404 due to complex address formatting.
     const domainProfile = prop.domainUrl || `https://www.google.com/search?q=site:domain.com.au+${encodeURIComponent(prop.address)}`;
 
     return (
@@ -563,7 +560,9 @@ const AgentResultView = ({
               comparables={allProperties.map(p => ({
                 address: p.address,
                 status: p.status,
-                label: p.price
+                label: p.price,
+                lat: p.lat,
+                lng: p.lng
               }))}
               highlightAddress={mapHighlight}
             />
