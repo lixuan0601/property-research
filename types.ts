@@ -91,7 +91,7 @@ export interface AnalysisState {
   coordinates?: { lat: number, lng: number };
 }
 
-export type ViewMode = 'talk' | 'insight';
+export type ViewMode = 'talk' | 'insight' | 'compare';
 
 export interface AgentSearchResult {
   answer: string;
@@ -99,12 +99,27 @@ export interface AgentSearchResult {
 }
 
 export interface PropertyData {
+  id: string;
   address: string;
   status: string;
   price?: string;
   date?: string;
-  features?: string; // This will hold the "Specs" (Beds/Baths/Land)
+  features?: string; 
   landSize?: string;
-  description?: string; // This will hold the narrative description
+  description?: string; 
   rawItems: string[];
+  // Extracted details for comparison
+  beds?: string;
+  baths?: string;
+  cars?: string;
+  type?: string;
+  // Specific features
+  solar?: boolean;
+  battery?: boolean;
+  pool?: boolean;
+  tennis?: boolean;
+  deck?: boolean;
+  balcony?: boolean;
+  shed?: boolean;
+  grannyFlat?: boolean;
 }

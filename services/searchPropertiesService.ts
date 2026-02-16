@@ -50,7 +50,7 @@ export const searchPropertiesAgent = async (query: string): Promise<AgentSearchR
            - Price: [Exact Price or 'Price on request']
            - Attributes: [Beds/Baths/Cars]
            - Land Size: [e.g. 800sqm, if available]
-           - Summary: [Brief narrative description/highlight of the property]
+           - Summary: [Detailed narrative highlight. Mention specific features like swimming pool, solar panels, solar battery, tennis court, deck, balcony, shed, or granny flat if present]
            - Listed: [Approximate date/timeline]
            
         STATUS options: SOLD, FOR SALE, FOR RENT, or LEASED.
