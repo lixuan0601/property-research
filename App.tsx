@@ -1,393 +1,16 @@
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { 
-  Search, MapPin, Loader2, Building2, Download, MessageSquare, 
-  Info, LayoutDashboard, TrendingUp, GraduationCap, Map as MapIcon, 
-  Lightbulb, ExternalLink, Home, Tag, Sparkles, DollarSign, 
-  BedDouble, Calendar, CheckCircle2, ChevronRight, List, Clock,
-  Plus, Trash2, ArrowRight, ArrowLeft, X, ChevronLeft, Columns,
-  Bath, Car, Maximize, Sun, Building, Scale, Waves, Zap, Battery,
-  Layout, Layers, Warehouse, Users, Target, Rocket, Activity,
-  Globe, MousePointer2, AlertCircle
-} from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Search, MapPin, Loader2, Building2, MessageSquare, Info, ChevronRight } from 'lucide-react';
 import { analyzeProperty } from './services/analyzePropertyService';
 import { searchPropertiesAgent } from './services/searchPropertiesService';
 import { parseAnalysisSections } from './services/dataParser';
-import { AnalysisState, SectionData, SectionProgress, ViewMode, AgentSearchResult, PropertyData, GroundingChunk } from './types';
+import { AnalysisState, SectionProgress, ViewMode, AgentSearchResult, PropertyData } from './types';
 import { IntelligenceCard } from './components/IntelligenceCard';
 import { AnalysisProgress } from './components/AnalysisProgress';
-import { MultiMarkerMap } from './components/MultiMarkerMap';
-
-const STATUS_KEYWORDS = ['SOLD', 'FOR SALE', 'FOR RENT', 'LEASED', 'RECENTLY SOLD', 'CONTINGENT', 'ACTIVE', 'PENDING'];
-
-const SUGGESTIONS = [
-  { label: 'Under $1.5M in Kenmore QLD', icon: DollarSign, color: 'text-emerald-500', query: 'Find 3+ bed houses under $1.5M in Kenmore, QLD' },
-  { label: 'High Yield > 5% Investment', icon: Activity, color: 'text-blue-500', query: 'Search for properties with high rental yield > 5% in Brisbane suburbs' },
-  { label: 'Solar Battery & Green Tech', icon: Battery, color: 'text-amber-500', query: 'Houses with solar panels and battery storage in Brisbane' },
-  { label: 'Sold in last 30 Days', icon: Clock, color: 'text-rose-500', query: 'Show me properties sold in the last 30 days in Indooroopilly' },
-  { label: 'Waterfront Subdivisions', icon: Waves, color: 'text-cyan-500', query: 'Waterfront properties in new subdivisions on the Gold Coast' },
-  { label: '4+ Bed with Granny Flat', icon: Users, color: 'text-purple-500', query: '4+ bedroom houses with a granny flat or dual living in QLD' },
-  { label: 'Luxury Townhouse Catchments', icon: GraduationCap, color: 'text-indigo-500', query: 'Luxury townhouses in elite school catchment zones' },
-];
-
-const getStatusColor = (status: string) => {
-  const s = status.toUpperCase();
-  if (s.includes('SOLD')) return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', dot: 'bg-red-500', highlight: 'bg-red-50/50 text-red-700 border-red-100' };
-  if (s.includes('SALE') || s.includes('ACTIVE')) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', dot: 'bg-blue-500', highlight: 'bg-blue-50/50 text-blue-700 border-blue-100' };
-  if (s.includes('RENT') || s.includes('LEASED')) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500', highlight: 'bg-emerald-50/50 text-emerald-700 border-emerald-100' };
-  if (s.includes('CONTINGENT') || s.includes('PENDING')) return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', dot: 'bg-amber-500', highlight: 'bg-amber-50/50 text-amber-700 border-amber-100' };
-  return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', dot: 'bg-slate-500', highlight: 'bg-slate-50/50 text-slate-700 border-slate-100' };
-};
-
-const getStatusFromTitle = (title: string) => {
-  const statusMatch = title.match(/\[(.*?)\]/);
-  if (statusMatch) return statusMatch[1].toUpperCase();
-  const foundKeyword = STATUS_KEYWORDS.find(k => title.toUpperCase().includes(k));
-  return foundKeyword || 'OTHER';
-};
-
-const findUrlInGrounding = (address: string, chunks: GroundingChunk[], domain: 'domain' | 'realestate') => {
-  const targetHost = domain === 'domain' ? 'domain.com.au' : 'realestate.com.au';
-  const addressParts = address.toLowerCase().split(/[ ,]+/).filter(p => p.length > 2);
-  let bestMatch: GroundingChunk | null = null;
-  let highestScore = 0;
-  chunks.forEach(c => {
-    if (!c.web?.uri) return;
-    const uri = c.web.uri.toLowerCase();
-    if (!uri.includes(targetHost)) return;
-    const matches = addressParts.filter(part => uri.includes(part)).length;
-    let patternScore = 0;
-    if (domain === 'domain' && uri.includes('property-profile')) patternScore = 2;
-    if (domain === 'realestate' && uri.includes('/property/')) patternScore = 2;
-    const totalScore = matches + patternScore;
-    if (totalScore > highestScore) {
-      highestScore = totalScore;
-      bestMatch = c;
-    }
-  });
-  return highestScore >= 3 ? bestMatch?.web?.uri : null;
-};
-
-// Reusable Features List Component for consistent look
-const FeaturesBadges = ({ prop }: { prop: PropertyData }) => (
-  <div className="flex flex-wrap gap-2">
-    {prop.pool && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-lg border border-emerald-100"><Waves size={12} /> Pool</span>}
-    {prop.solar && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-600 text-[10px] font-black uppercase rounded-lg border border-amber-100"><Sun size={12} /> Solar</span>}
-    {prop.battery && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-600 text-[10px] font-black uppercase rounded-lg border border-amber-100"><Battery size={12} /> Battery</span>}
-    {prop.tennis && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 text-purple-600 text-[10px] font-black uppercase rounded-lg border border-purple-100"><Zap size={12} /> Tennis Court</span>}
-    {prop.deck && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase rounded-lg border border-blue-100"><Layout size={12} /> Deck</span>}
-    {prop.balcony && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase rounded-lg border border-blue-100"><Layers size={12} /> Balcony</span>}
-    {prop.shed && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase rounded-lg border border-blue-100"><Warehouse size={12} /> Shed</span>}
-    {prop.grannyFlat && <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-lg border border-emerald-100"><Users size={12} /> Granny Flat</span>}
-  </div>
-);
-
-const ComparisonCarousel = ({ 
-  items, 
-  onBack 
-}: { 
-  items: PropertyData[], 
-  onBack: () => void 
-}) => {
-  const [startIndex, setStartIndex] = useState(0);
-  const visibleCount = 3;
-  const maxIndex = Math.max(0, items.length - visibleCount);
-  const next = () => setStartIndex(prev => Math.min(prev + 1, maxIndex));
-  const prev = () => setStartIndex(prev => Math.max(prev - 1, 0));
-  const visibleItems = items.slice(startIndex, startIndex + visibleCount);
-
-  const CompareRow = ({ label, icon: Icon, value, colorClass = "text-slate-800" }: { label: string, icon: any, value: string | React.ReactNode, colorClass?: string }) => (
-    <div className="flex flex-col gap-1 py-3 border-b border-slate-50 last:border-0">
-      <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-        <Icon size={12} className="opacity-70" /> {label}
-      </div>
-      <div className={`text-sm font-bold ${colorClass}`}>
-        {value || <span className="text-slate-300">N/A</span>}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="animate-fade-in space-y-10 pb-20">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <button onClick={onBack} className="flex items-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-blue-600 transition-all bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md mb-4">
-            <ChevronLeft size={16} /> Back to Results
-          </button>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 rounded-2xl text-white shadow-lg shadow-blue-200"><Scale size={28} /></div>
-            Property Comparison
-          </h2>
-        </div>
-        <div className="flex items-center gap-5 bg-white p-3 rounded-[2rem] border border-slate-100 shadow-xl">
-          <span className="text-xs font-black text-slate-400 uppercase tracking-widest ml-4">
-            Viewing {startIndex + 1}—{Math.min(startIndex + visibleCount, items.length)} <span className="text-slate-200 mx-2">/</span> {items.length} Properties
-          </span>
-          <div className="flex gap-2">
-            <button disabled={startIndex === 0} onClick={prev} className="p-3 rounded-2xl border border-slate-200 bg-white shadow-sm disabled:opacity-20 hover:border-blue-500 transition-all">
-              <ArrowLeft size={20} strokeWidth={2.5} />
-            </button>
-            <button disabled={startIndex >= maxIndex} onClick={next} className="p-3 rounded-2xl border border-slate-200 bg-white shadow-sm disabled:opacity-20 hover:border-blue-500 transition-all">
-              <ArrowRight size={20} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {visibleItems.map((prop) => {
-          const colors = getStatusColor(prop.status);
-          const isSold = prop.status.includes('SOLD');
-          return (
-            <div key={prop.id} className="bg-white border border-slate-200 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col relative group/card">
-              <div className={`h-2.5 w-full ${colors.dot}`}></div>
-              <div className="p-8 flex-1 flex flex-col">
-                <div className="mb-8">
-                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border mb-4 shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>{prop.status}
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 leading-tight mb-2 group-hover/card:text-blue-600 transition-colors min-h-[3rem]">{prop.address}</h3>
-                  <div className="text-3xl font-black text-blue-600 tracking-tight">{prop.price || 'Price on request'}</div>
-                </div>
-                <div className="space-y-1 flex-1">
-                  <CompareRow label="Property Type" icon={Building} value={prop.type} colorClass="text-blue-700" />
-                  <CompareRow label="Bedrooms" icon={BedDouble} value={prop.beds} />
-                  <CompareRow label="Bathrooms" icon={Bath} value={prop.baths} />
-                  <CompareRow label="Garage / Parking" icon={Car} value={prop.cars} />
-                  <CompareRow label="Land Size" icon={Maximize} value={prop.landSize} />
-                  <CompareRow label={isSold ? "Sold Date" : "Listing Date"} icon={Calendar} value={prop.date} />
-                  <div className="py-4 space-y-3">
-                    <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Premium Features</h4>
-                    <FeaturesBadges prop={prop} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const AgentResultView = ({ 
-  result, 
-  onAddToCompare,
-  compareList
-}: { 
-  result: AgentSearchResult,
-  onAddToCompare: (prop: PropertyData) => void,
-  compareList: PropertyData[]
-}) => {
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [mapHighlight, setMapHighlight] = useState<string | undefined>(undefined);
-
-  const { introText, categorizedCards, allProperties } = useMemo(() => {
-    const cleanText = result.answer.replace(/\*\*/g, '');
-    const lines = cleanText.split('\n');
-    const intro: string[] = [];
-    const categories: Record<string, PropertyData[]> = {};
-    const all: PropertyData[] = [];
-    let current: PropertyData | null = null;
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      if (trimmed.startsWith('### ')) {
-        if (current) {
-          if (!categories[current.status]) categories[current.status] = [];
-          categories[current.status].push(current);
-          all.push(current);
-        }
-        const title = trimmed.substring(4);
-        const status = getStatusFromTitle(title);
-        const address = title.replace(/\[.*?\]/, '').trim();
-        current = { id: btoa(address).substring(0, 16), address, status, rawItems: [], type: 'House' };
-      } else if (trimmed.startsWith('- ') && current) {
-        current.rawItems.push(trimmed.substring(2));
-        const content = trimmed.substring(2).trim();
-        const lower = content.toLowerCase();
-        if (lower.startsWith('price:')) current.price = content.split(':')[1]?.trim();
-        else if (lower.startsWith('type:')) current.type = content.split(':')[1]?.trim();
-        else if (lower.startsWith('beds:')) current.beds = content.split(':')[1]?.trim();
-        else if (lower.startsWith('baths:')) current.baths = content.split(':')[1]?.trim();
-        else if (lower.startsWith('cars:')) current.cars = content.split(':')[1]?.trim();
-        else if (lower.startsWith('land:')) current.landSize = content.split(':')[1]?.trim();
-        else if (lower.startsWith('lat:')) current.lat = parseFloat(content.split(':')[1]?.trim());
-        else if (lower.startsWith('lng:')) current.lng = parseFloat(content.split(':')[1]?.trim());
-        else if (lower.startsWith('listed:') || lower.startsWith('sold:')) current.date = content.split(':')[1]?.trim();
-        else if (lower.startsWith('summary:')) current.description = content.split(':')[1]?.trim();
-        else if (lower.startsWith('domain:')) current.domainUrl = content.split(':')[1]?.trim();
-        else if (lower.startsWith('rea:')) current.realestateUrl = content.split(':')[1]?.trim();
-        else if (lower.startsWith('features:')) {
-           const f = lower.split(':')[1];
-           if (f.includes('pool')) current.pool = true;
-           if (f.includes('solar')) current.solar = true;
-           if (f.includes('battery')) current.battery = true;
-           if (f.includes('tennis')) current.tennis = true;
-           if (f.includes('deck')) current.deck = true;
-           if (f.includes('balcony')) current.balcony = true;
-           if (f.includes('shed')) current.shed = true;
-           if (f.includes('granny')) current.grannyFlat = true;
-        }
-      } else if (!current) {
-        intro.push(trimmed);
-      }
-    });
-    if (current) {
-      if (!categories[current.status]) categories[current.status] = [];
-      categories[current.status].push(current);
-      all.push(current);
-    }
-    return { introText: intro, categorizedCards: categories, allProperties: all };
-  }, [result]);
-
-  const highlightKeywords = (str: string) => {
-    let parts: React.ReactNode[] = [str];
-    STATUS_KEYWORDS.forEach(word => {
-      const newParts: React.ReactNode[] = [];
-      parts.forEach(part => {
-        if (typeof part !== 'string') { newParts.push(part); return; }
-        const regex = new RegExp(`(${word})`, 'gi');
-        part.split(regex).forEach((seg, i) => {
-          if (seg.toUpperCase() === word) {
-            const colors = getStatusColor(seg);
-            newParts.push(<span key={i} className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold mx-1 border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}><span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>{seg.toUpperCase()}</span>);
-          } else if (seg) newParts.push(seg);
-        });
-      });
-      parts = newParts;
-    });
-    return parts;
-  };
-
-  const handleShowOnMap = (address: string) => { setMapHighlight(address); setViewMode('map'); };
-
-  const renderPropertyCard = (prop: PropertyData, key: string) => {
-    const colors = getStatusColor(prop.status);
-    const isAlreadySelected = compareList.some(item => item.id === prop.id);
-    const domainProfile = prop.domainUrl || `https://www.google.com/search?q=site:domain.com.au+${encodeURIComponent(prop.address)}`;
-
-    return (
-      <div key={key} className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500 group relative">
-        <div className={`h-2 w-full ${colors.dot}`}></div>
-        <div className="p-8">
-          <div className="flex flex-col lg:flex-row justify-between items-start gap-8">
-            <div className="flex-1 space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm ${colors.bg} ${colors.text} ${colors.border}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${colors.dot}`}></span>{prop.status}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-400 flex items-center gap-1"><Building size={14} className="text-blue-500" /> {prop.type}</span>
-                  <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                  <span className="text-xs font-bold text-slate-400 flex items-center gap-1"><Calendar size={14} className="text-blue-500" /> {prop.date}</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <a href={domainProfile} target="_blank" rel="noopener noreferrer" className="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors tracking-tight leading-tight">
-                  {prop.address}
-                </a>
-                <div className="flex items-center gap-4 text-xs font-bold text-blue-600 uppercase tracking-wider pt-1">
-                   <button onClick={() => handleShowOnMap(prop.address)} className="flex items-center gap-1.5 hover:text-blue-800"><MapIcon size={14} /> Show on Map</button>
-                   <button onClick={() => onAddToCompare(prop)} disabled={isAlreadySelected} className={`flex items-center gap-1.5 ${isAlreadySelected ? 'text-green-500' : 'hover:text-blue-800'}`}>
-                     {isAlreadySelected ? <CheckCircle2 size={14} /> : <Plus size={14} />} {isAlreadySelected ? 'In Comparison' : 'Add to Comparison'}
-                   </button>
-                </div>
-              </div>
-
-              {prop.description && (
-                <p className="text-sm text-slate-500 leading-relaxed max-w-2xl bg-slate-50 p-4 rounded-2xl border border-slate-100 border-l-4 border-l-blue-500 italic">
-                  "{prop.description}"
-                </p>
-              )}
-              
-              <div className="pt-2">
-                <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-3">Premium Features</h4>
-                <FeaturesBadges prop={prop} />
-              </div>
-            </div>
-
-            <div className="lg:w-72 flex flex-col gap-6">
-              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-inner">
-                <div className="text-3xl font-black text-blue-600 tracking-tighter mb-4">{prop.price || 'Request Price'}</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><BedDouble size={10} /> Beds</span>
-                    <span className="text-sm font-bold text-slate-700">{prop.beds || '-'}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Bath size={10} /> Baths</span>
-                    <span className="text-sm font-bold text-slate-700">{prop.baths || '-'}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Car size={10} /> Cars</span>
-                    <span className="text-sm font-bold text-slate-700">{prop.cars || '-'}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Maximize size={10} /> Land</span>
-                    <span className="text-sm font-bold text-slate-700 truncate">{prop.landSize || '-'}</span>
-                  </div>
-                </div>
-              </div>
-              <a href={domainProfile} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 py-4 bg-white border-2 border-slate-100 rounded-2xl text-slate-600 font-bold hover:border-blue-500 hover:text-blue-600 hover:shadow-lg transition-all active:scale-95">
-                View on Domain <ExternalLink size={16} />
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const statusDisplayOrder = ['SOLD', 'RECENTLY SOLD', 'FOR SALE', 'ACTIVE', 'FOR RENT', 'LEASED', 'PENDING', 'CONTINGENT', 'OTHER'];
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-900">
-          <div className="bg-blue-50 p-2.5 rounded-2xl text-blue-600 shadow-sm"><Sparkles size={28} /></div> Market Search Intelligence
-        </h2>
-        {allProperties.length > 0 && (
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner w-fit">
-            <button onClick={() => { setViewMode('list'); setMapHighlight(undefined); }} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <List size={16} /> List View
-            </button>
-            <button onClick={() => setViewMode('map')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold ${viewMode === 'map' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <MapIcon size={16} /> Map View
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="intro-section">
-        {introText.map((p, i) => <p key={i} className="mb-4 text-slate-600 leading-relaxed text-sm last:mb-0">{highlightKeywords(p)}</p>)}
-      </div>
-      {viewMode === 'list' ? (
-        <div className="space-y-12">
-          {statusDisplayOrder.map(status => {
-            const cards = categorizedCards[status];
-            if (!cards || cards.length === 0) return null;
-            return (
-              <div key={status} className="category-group animate-fade-in">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="h-px flex-1 bg-slate-200"></div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border bg-white text-slate-400 border-slate-100">{status}</h3>
-                  <div className="h-px flex-1 bg-slate-200"></div>
-                </div>
-                <div className="grid grid-cols-1 gap-8">{cards.map((card, idx) => renderPropertyCard(card, `${status}-${idx}`))}</div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="w-full h-[700px] bg-slate-100 rounded-[3rem] overflow-hidden border-4 border-white shadow-2xl relative">
-          <MultiMarkerMap comparables={allProperties.map(p => ({ address: p.address, status: p.status, label: p.price, lat: p.lat, lng: p.lng }))} highlightAddress={mapHighlight} />
-        </div>
-      )}
-    </div>
-  );
-};
+import { AgentResultView } from './components/AgentResultView';
+import { ComparisonCarousel } from './components/ComparisonCarousel';
+import { ComparisonTray } from './components/ComparisonTray';
+import { SearchSuggestions } from './components/SearchSuggestions';
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewMode | null>(null);
@@ -398,11 +21,10 @@ export default function App() {
   const [agentQuery, setAgentQuery] = useState('');
   const [agentStatus, setAgentStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [agentResult, setAgentResult] = useState<AgentSearchResult | null>(null);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const printRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState('Property Overview');
+  
   const inputRef = useRef<HTMLInputElement>(null);
   const autoCompleteRef = useRef<any>(null);
-  const [activeTab, setActiveTab] = useState('Property Overview');
   const TABS = ['Property Overview', 'Investment Insights', 'Price History', 'Suburb Profile', 'School Catchment & Ratings'];
 
   useEffect(() => {
@@ -419,7 +41,10 @@ export default function App() {
     };
     const initAutocomplete = () => {
       if (!inputRef.current || !(window as any).google || autoCompleteRef.current) return;
-      autoCompleteRef.current = new (window as any).google.maps.places.Autocomplete(inputRef.current, { types: ['address'], componentRestrictions: { country: 'au' } });
+      autoCompleteRef.current = new (window as any).google.maps.places.Autocomplete(inputRef.current, { 
+        types: ['address'], 
+        componentRestrictions: { country: 'au' } 
+      });
       autoCompleteRef.current.addListener('place_changed', () => {
         const place = autoCompleteRef.current.getPlace();
         if (place.formatted_address) setAddress(place.formatted_address);
@@ -460,8 +85,6 @@ export default function App() {
     if (!comparisonList.find(p => p.id === prop.id)) setComparisonList(prev => [...prev, prop]);
   };
 
-  const handleRemoveFromCompare = (id: string) => setComparisonList(prev => prev.filter(p => p.id !== id));
-
   const sections = insightState.data ? parseAnalysisSections(insightState.data.text) : [];
   const activeSectionData = sections.find(s => s.title === activeTab);
 
@@ -473,71 +96,125 @@ export default function App() {
           <span className="font-bold text-xl tracking-tight text-slate-800">PropSearch<span className="text-blue-600">Intel</span></span>
         </div>
       </header>
+
       <div className="flex flex-1 relative overflow-hidden">
         <div className={`flex-1 overflow-y-auto transition-all duration-500 ${(activeView === 'talk' || activeView === 'insight') && comparisonList.length > 0 ? 'mr-80' : ''}`}>
           <div className="bg-white border-b border-slate-200 pb-12 pt-16 px-4 shadow-sm text-center">
             <h1 className="text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">Advanced Real Estate <span className="text-blue-600">Intelligence</span></h1>
+            
             <div className="flex flex-wrap justify-center gap-4 mb-10">
-              <button onClick={() => { setActiveView('talk'); setInsightState({status:'idle', data:null}); }} className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'talk' ? 'bg-blue-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-blue-200'}`}><MessageSquare size={24} /> Talk to AI Agent</button>
-              <button onClick={() => { setActiveView('insight'); setAgentStatus('idle'); setAgentResult(null); }} className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'insight' ? 'bg-indigo-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-indigo-200'}`}><Info size={24} /> Property Insight</button>
+              <button 
+                onClick={() => { setActiveView('talk'); setInsightState({status:'idle', data:null}); }} 
+                className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'talk' ? 'bg-blue-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-blue-200'}`}
+              >
+                <MessageSquare size={24} /> Talk to AI Agent
+              </button>
+              <button 
+                onClick={() => { setActiveView('insight'); setAgentStatus('idle'); setAgentResult(null); }} 
+                className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${activeView === 'insight' ? 'bg-indigo-600 text-white scale-105' : 'bg-white border-2 border-slate-100 text-slate-600 hover:border-indigo-200'}`}
+              >
+                <Info size={24} /> Property Insight
+              </button>
             </div>
+
             {activeView === 'talk' && (
               <div className="max-w-3xl mx-auto animate-fade-in px-4">
                 <form onSubmit={(e) => handleAgentSearch(e)} className="relative group mb-8">
-                  <input type="text" className="block w-full pl-6 pr-12 py-5 bg-white border border-slate-200 rounded-3xl text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 shadow-xl text-lg" placeholder="Find me houses in Paddington under $2M..." value={agentQuery} onChange={(e) => setAgentQuery(e.target.value)} />
-                  <button type="submit" disabled={agentStatus === 'loading'} className="absolute inset-y-3 right-3 px-6 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 disabled:bg-slate-300 shadow-lg">{agentStatus === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}</button>
+                  <input 
+                    type="text" 
+                    className="block w-full pl-6 pr-12 py-5 bg-white border border-slate-200 rounded-3xl text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 shadow-xl text-lg" 
+                    placeholder="Find me houses in Paddington under $2M..." 
+                    value={agentQuery} 
+                    onChange={(e) => setAgentQuery(e.target.value)} 
+                  />
+                  <button type="submit" disabled={agentStatus === 'loading'} className="absolute inset-y-3 right-3 px-6 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 disabled:bg-slate-300 shadow-lg">
+                    {agentStatus === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                  </button>
                 </form>
                 {!agentResult && agentStatus !== 'loading' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {SUGGESTIONS.map((s, i) => <button key={i} onClick={() => handleAgentSearch(undefined, s.query)} className="flex items-center gap-3 p-4 bg-white/40 border border-slate-200 rounded-2xl text-left hover:bg-white hover:border-blue-300 transition-all shadow-sm"><div className={`p-2 rounded-xl bg-white border border-slate-100 shadow-sm ${s.color}`}><s.icon size={16} /></div><span className="text-xs font-black text-slate-800 leading-tight">{s.label}</span></button>)}
-                  </div>
+                  <SearchSuggestions onSelect={(q) => handleAgentSearch(undefined, q)} />
                 )}
               </div>
             )}
+
             {activeView === 'insight' && (
               <div className="max-w-2xl mx-auto animate-fade-in px-4">
                 <form onSubmit={handleInsightSearch} className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center"><MapPin className="h-5 w-5 text-slate-400" /></div>
-                  <input ref={inputRef} type="text" className="block w-full pl-12 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 shadow-sm text-lg" placeholder="Enter property address..." value={address} onChange={(e) => setAddress(e.target.value)} />
-                  <button type="submit" disabled={insightState.status === 'loading'} className="absolute inset-y-2.5 right-2.5 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md">{insightState.status === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}</button>
+                  <input 
+                    ref={inputRef} 
+                    type="text" 
+                    className="block w-full pl-12 pr-12 py-4 bg-white border border-slate-200 rounded-2xl text-slate-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 shadow-sm text-lg" 
+                    placeholder="Enter property address..." 
+                    value={address} 
+                    onChange={(e) => setAddress(e.target.value)} 
+                  />
+                  <button type="submit" disabled={insightState.status === 'loading'} className="absolute inset-y-2.5 right-2.5 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md">
+                    {insightState.status === 'loading' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                  </button>
                 </form>
                 {insightState.status === 'loading' && <AnalysisProgress progress={insightProgress} />}
               </div>
             )}
           </div>
+
           <main className="max-w-7xl mx-auto px-4 py-12">
-            {activeView === 'compare' ? <ComparisonCarousel items={comparisonList} onBack={() => setActiveView('talk')} /> : (
+            {activeView === 'compare' ? (
+              <ComparisonCarousel items={comparisonList} onBack={() => setActiveView('talk')} />
+            ) : (
               <>
-                {activeView === 'talk' && agentResult && <div className="animate-fade-in"><AgentResultView result={agentResult} onAddToCompare={handleAddToCompare} compareList={comparisonList} /></div>}
+                {activeView === 'talk' && agentResult && (
+                  <div className="animate-fade-in">
+                    <AgentResultView result={agentResult} onAddToCompare={handleAddToCompare} compareList={comparisonList} />
+                  </div>
+                )}
                 {activeView === 'insight' && insightState.status === 'success' && (
                   <div className="animate-fade-in">
                     <div className="mb-6 flex space-x-2 border-b border-slate-200 overflow-x-auto">
-                      {TABS.map(tab => <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-4 text-sm font-bold rounded-t-2xl transition-all whitespace-nowrap ${activeTab === tab ? 'text-indigo-600 bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{tab}</button>)}
+                      {TABS.map(tab => (
+                        <button 
+                          key={tab} 
+                          onClick={() => setActiveTab(tab)} 
+                          className={`px-6 py-4 text-sm font-bold rounded-t-2xl transition-all whitespace-nowrap ${activeTab === tab ? 'text-indigo-600 bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
                     </div>
                     <div className="bg-white rounded-b-3xl border border-t-0 border-slate-200 shadow-sm p-6">
-                      {activeSectionData ? <IntelligenceCard section={activeSectionData} searchAddress={address} allSections={sections} onAddToCompare={handleAddToCompare} comparisonList={comparisonList} /> : <div className="text-center py-20 text-slate-400 italic">No data available for {activeTab}</div>}
+                      {activeSectionData ? (
+                        <IntelligenceCard 
+                          section={activeSectionData} 
+                          searchAddress={address} 
+                          allSections={sections} 
+                          onAddToCompare={handleAddToCompare} 
+                          comparisonList={comparisonList} 
+                        />
+                      ) : (
+                        <div className="text-center py-20 text-slate-400 italic">No data available for {activeTab}</div>
+                      )}
                     </div>
                   </div>
                 )}
-                {!activeView && <div className="text-center py-32 border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50/50 flex flex-col items-center"><div className="bg-white p-6 rounded-full shadow-lg mb-8"><Building2 className="text-blue-600" size={48} /></div><h3 className="text-2xl font-bold text-slate-900 mb-4 tracking-tight">Welcome to PropSearch Intel</h3><p className="text-slate-500 max-w-md mx-auto leading-relaxed">Select a tool above to start your real estate journey. Search for properties with the AI Agent or get deep insights for a specific address.</p></div>}
+                {!activeView && (
+                  <div className="text-center py-32 border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50/50 flex flex-col items-center">
+                    <div className="bg-white p-6 rounded-full shadow-lg mb-8"><Building2 className="text-blue-600" size={48} /></div>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-4 tracking-tight">Welcome to PropSearch Intel</h3>
+                    <p className="text-slate-500 max-w-md mx-auto leading-relaxed">Select a tool above to start your real estate journey. Search for properties with the AI Agent or get deep insights for a specific address.</p>
+                  </div>
+                )}
               </>
             )}
           </main>
         </div>
+
         {(activeView === 'talk' || activeView === 'insight') && comparisonList.length > 0 && (
-          <aside className="fixed right-0 top-16 bottom-0 w-80 bg-white border-l border-slate-200 shadow-2xl flex flex-col z-50 animate-slide-in-right">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between"><div><h3 className="font-black text-slate-800 flex items-center gap-2"><Columns size={18} className="text-blue-600" /> Comparison Tray</h3><p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-1">{comparisonList.length}/10 Properties Selected</p></div><button onClick={() => setComparisonList([])} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18} /></button></div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-              {comparisonList.map((item) => (
-                <div key={item.id} className="group relative bg-slate-50 border border-slate-100 rounded-xl p-4 hover:bg-white hover:border-blue-200 transition-all">
-                  <button onClick={() => handleRemoveFromCompare(item.id)} className="absolute -top-1.5 -right-1.5 p-1 bg-white border border-slate-200 text-slate-400 hover:text-red-500 rounded-full shadow-sm opacity-0 group-hover:opacity-100 z-10"><X size={12} /></button>
-                  <h4 className="text-xs font-black text-slate-800 leading-tight truncate mb-2">{item.address}</h4>
-                  <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase"><div className="flex items-center gap-1"><BedDouble size={10} /> {item.beds || '-'}</div><div className="flex items-center gap-1"><Bath size={10} /> {item.baths || '-'}</div><div className="flex items-center gap-1"><Maximize size={10} /> {item.landSize || '-'}</div></div>
-                </div>
-              ))}
-            </div>
-            <div className="p-6 border-t border-slate-100 bg-slate-50/50"><button onClick={() => setActiveView('compare')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">Compare All <ChevronRight size={18} /></button></div>
-          </aside>
+          <ComparisonTray 
+            items={comparisonList}
+            onRemove={(id) => setComparisonList(prev => prev.filter(p => p.id !== id))}
+            onClear={() => setComparisonList([])}
+            onCompare={() => setActiveView('compare')}
+          />
         )}
       </div>
     </div>
