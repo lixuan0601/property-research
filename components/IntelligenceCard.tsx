@@ -1,8 +1,9 @@
+
 import React from 'react';
 import { 
   Home, TrendingUp, MapPin, Lightbulb, Info, Users, GraduationCap, Scale
 } from 'lucide-react';
-import { SectionData } from '../types';
+import { SectionData, PropertyData } from '../types';
 import { PropertyOverviewSection } from './PropertyOverviewSection';
 import { PriceHistorySection } from './PriceHistorySection';
 import { SchoolCatchmentSection } from './SchoolCatchmentSection';
@@ -16,6 +17,8 @@ interface IntelligenceCardProps {
   hideMap?: boolean;
   allSections?: SectionData[];
   subjectCoords?: { lat: number, lng: number };
+  onAddToCompare?: (prop: PropertyData) => void;
+  comparisonList?: PropertyData[];
 }
 
 const iconMap = {
@@ -39,7 +42,9 @@ export const IntelligenceCard: React.FC<IntelligenceCardProps> = ({
   section, 
   searchAddress, 
   hideMap = false, 
-  subjectCoords 
+  subjectCoords,
+  onAddToCompare,
+  comparisonList = []
 }) => {
   const Icon = iconMap[section.icon] || Info;
 
@@ -70,6 +75,8 @@ export const IntelligenceCard: React.FC<IntelligenceCardProps> = ({
           hideMap={hideMap}
           subjectCoords={subjectCoords}
           content={section.content}
+          onAddToCompare={onAddToCompare}
+          comparisonList={comparisonList}
         />
       );
     }

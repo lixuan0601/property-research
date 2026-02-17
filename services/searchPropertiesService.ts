@@ -5,8 +5,7 @@ import { AgentSearchResult } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Enhanced retry wrapper for Gemini API calls to handle transient 503/429 errors.
- * Uses jittered exponential backoff for better reliability during high demand.
+ * Enhanced retry wrapper for Gemini API calls.
  */
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 4): Promise<T> {
   let attempt = 0;
@@ -17,34 +16,26 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 4): Promi
       attempt++;
       const errorMsg = error?.message?.toLowerCase() || "";
       const status = error?.status || "";
-      const code = error?.code;
-      
       const isRetryable = 
         errorMsg.includes('overloaded') || 
         errorMsg.includes('503') || 
         errorMsg.includes('429') || 
-        errorMsg.includes('unavailable') ||
         status === 'UNAVAILABLE' ||
-        status === 'RESOURCE_EXHAUSTED' ||
-        code === 503 ||
-        code === 429;
+        status === 'RESOURCE_EXHAUSTED';
 
       if (isRetryable && attempt < maxRetries) {
-        // Backoff: 3s, 6s, 12s + jitter
         const backoff = (Math.pow(2, attempt) * 1500) + (Math.random() * 1000);
-        console.warn(`Gemini API Busy (Attempt ${attempt}/${maxRetries}). Retrying in ${Math.round(backoff)}ms...`);
         await new Promise(resolve => setTimeout(resolve, backoff));
         continue;
       }
       throw error;
     }
   }
-  throw new Error("Market Intelligence service is currently at capacity. Please try again in 1-2 minutes.");
+  throw new Error("Market Intelligence service is currently at capacity.");
 }
 
 /**
  * AI Agent for searching properties based on natural language queries.
- * Specifically optimized for Australian real estate portal URL extraction.
  */
 export const searchPropertiesAgent = async (query: string): Promise<AgentSearchResult> => {
   return withRetry(async () => {
@@ -55,26 +46,23 @@ export const searchPropertiesAgent = async (query: string): Promise<AgentSearchR
         
         CRITICAL INSTRUCTIONS:
         1. Target properties listed or sold in the LAST 90 DAYS.
-        2. Use Google Search to find the EXACT "Property Profile" or "Listing" URL on Domain.com.au and Realestate.com.au for every property.
-        3. DO NOT Guess or Guess-construct URLs. Only provide URLs you actually see in the search results to avoid 404 errors.
-        
-        URL SEARCH GUIDELINES:
-        - For Domain: Look for URLs containing "domain.com.au/property-profile/" or "domain.com.au/street-number-street-name...".
-        - For REA: Look for URLs containing "realestate.com.au/property-address..." or "realestate.com.au/property/".
-
-        4. FORMAT EVERY PROPERTY ENTRY EXACTLY AS BELOW:
-           ### [STATUS] FULL_STREET_ADDRESS, SUBURB, STATE, POSTCODE
+        2. Format every property with a header ### [STATUS] ADDRESS.
+        3. Extract the following details for EVERY listing:
            - Price: [Exact Price or 'Price on request']
-           - Attributes: [Beds/Baths/Cars]
-           - Land Size: [e.g. 800sqm, if available]
-           - Summary: [Detailed highlights. Mention pool, solar, battery, etc.]
-           - Listed: [Date or timeline]
-           - Domain: [Paste the direct domain.com.au URL found via search]
-           - REA: [Paste the direct realestate.com.au URL found via search]
+           - Type: [House/Unit/Townhouse/etc.]
+           - Beds: [Number]
+           - Baths: [Number]
+           - Cars: [Number of parking spaces]
+           - Land: [Size in sqm/acres]
+           - Lat: [Decimal Latitude]
+           - Lng: [Decimal Longitude]
+           - Features: [List containing specific flags: POOL, SOLAR, BATTERY, TENNIS, DECK, BALCONY, SHED, GRANNY FLAT if present]
+           - Summary: [Detailed highlights]
+           - Domain: [Direct domain.com.au URL from search results]
+           - REA: [Direct realestate.com.au URL from search results]
            
         STATUS options: SOLD, FOR SALE, FOR RENT, or LEASED.
-        
-        If you cannot find a direct profile link, provide the most relevant search result URL for that specific address on that portal.`,
+        Ensure your URLs are from actual search results to avoid 404s.`,
         config: {
           tools: [{ googleSearch: {} }],
           thinkingConfig: { thinkingBudget: 0 },
